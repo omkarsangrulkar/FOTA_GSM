@@ -1,0 +1,11 @@
+../Core/Src/M66.c:29:6:Delay	24	static
+../Core/Src/M66.c:33:6:Initialize_Modem	8	static
+../Core/Src/M66.c:69:6:SSL_Config	4112	static
+../Core/Src/M66.c:177:6:AWS_MQTT	400	static
+../Core/Src/M66.c:210:6:send_at_command	16	static
+../Core/Src/M66.c:216:8:receive_data	24	static
+../Core/Src/M66.c:233:6:handle_mqtt_message	48	static
+../Core/Src/M66.c:291:6:download_firmware	416	static
+../Core/Src/M66.c:365:6:verify_firmware_update	32	static
+../Core/Src/M66.c:384:10:calculate_crc32	32	static
+../Core/Src/M66.c:406:6:write_firmware_to_flash	64	static
