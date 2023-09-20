@@ -232,12 +232,18 @@ void USART3_IRQHandler(void)
 /* USER CODE BEGIN 1 */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
     if (huart->Instance == USART2) {
-        // Data received, handle it
-    	handle_mqtt_message(uart_rx_buffer);
+        // Process the received byte
+        if (current_mode == MODE_MQTT) {
+            handle_mqtt_byte(received_byte);
+        } else {
+            handle_default_byte(received_byte);
+        }
 
-        // Start listening for the next UART data
-//        HAL_UART_Receive_IT(&huart2, (uint8_t*)uart_rx_buffer, 170);
+        // Reactivate the UART receive interrupt
+        HAL_UART_Receive_IT(&huart2, &received_byte, 1);
+
+        // Indicate that new data has been received
+        data_received_flag = true;
     }
 }
-
 /* USER CODE END 1 */

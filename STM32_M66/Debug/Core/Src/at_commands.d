@@ -1,4 +1,5 @@
-Core/Src/M66.o: ../Core/Src/M66.c ../Core/Inc/M66.h \
+Core/Src/at_commands.o: ../Core/Src/at_commands.c \
+ ../Core/Inc/at_commands.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h \
  ../Core/Inc/stm32f4xx_hal_conf.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_rcc.h \
@@ -28,9 +29,8 @@ Core/Src/M66.o: ../Core/Src/M66.c ../Core/Inc/M66.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_pwr_ex.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_spi.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_uart.h \
- ../Core/Inc/main.h ../Core/Inc/main.h ../Core/Inc/cJSON.h \
- ../Core/Inc/at_commands.h
-../Core/Inc/M66.h:
+ ../Core/Inc/main.h ../Core/Inc/M66.h
+../Core/Inc/at_commands.h:
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h:
 ../Core/Inc/stm32f4xx_hal_conf.h:
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_rcc.h:
@@ -61,6 +61,4 @@ Core/Src/M66.o: ../Core/Src/M66.c ../Core/Inc/M66.h \
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_spi.h:
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_uart.h:
 ../Core/Inc/main.h:
-../Core/Inc/main.h:
-../Core/Inc/cJSON.h:
-../Core/Inc/at_commands.h:
+../Core/Inc/M66.h:

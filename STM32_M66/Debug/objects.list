@@ -1,4 +1,5 @@
 "./Core/Src/M66.o"
+"./Core/Src/at_commands.o"
 "./Core/Src/cJSON.o"
 "./Core/Src/main.o"
 "./Core/Src/stm32f4xx_hal_msp.o"

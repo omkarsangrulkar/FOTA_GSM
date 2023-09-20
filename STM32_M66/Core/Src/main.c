@@ -25,8 +25,7 @@
 #include "M66.h"
 #include <string.h>
 #include "stdbool.h"
-#include "stm32f4xx_hal_uart.h"
-#include "M66.h"
+#include "at_commands.h"
 
 /* USER CODE END Includes */
 
@@ -39,8 +38,8 @@
 /* USER CODE BEGIN PD */
 // Define the maximum size of the firmware buffer
 
-#define UART_BUFFER_SIZE (170)
-char uart_rx_buffer[UART_BUFFER_SIZE];
+
+
 
 const char* url ;
 /* USER CODE END PD */
@@ -70,7 +69,7 @@ static void MX_SPI1_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART3_UART_Init(void);
 /* USER CODE BEGIN PFP */
-
+void modem_setup(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -113,24 +112,7 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-
-//  char txData[] = "AT+CPIN?\r\n"; // AT command to send
-//  char rxData[100];         // Buffer for receiving response
-//  uint8_t success = 0;
-//
-//  HAL_UART_Transmit(&huart2, (uint8_t*)txData, strlen(txData), HAL_MAX_DELAY);
-////  HAL_UART_Transmit(&huart3, (uint8_t*)txData, strlen(txData), HAL_MAX_DELAY);
-//
-//
-//  HAL_UART_Receive(&huart2, (uint8_t *)rxData, sizeof(100), HAL_MAX_DELAY);
-//  if (strstr(rxData, "+CPIN: READY") != NULL){
-//    success = 1;
-//  }
-  Initialize_Modem();
-  HAL_Delay(3000);
-  SSL_Config();
-  HAL_Delay(3000);
-  AWS_MQTT();
+  modem_setup();
 
 //  HAL_UART_Receive_IT(&huart2, (uint8_t*)uart_rx_buffer, 180);
 
@@ -142,11 +124,15 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-	  HAL_UART_Receive_IT(&huart2, (uint8_t*)uart_rx_buffer, 170);
+//	  HAL_UART_Receive_IT(&huart2, (uint8_t*)uart_rx_buffer, 170);
+
     /* USER CODE BEGIN 3 */
 
-  }
+    firmware_update_handler();
+
+
   /* USER CODE END 3 */
+  }
 }
 
 /**
@@ -233,38 +219,38 @@ static void MX_I2C1_Init(void)
   * @param None
   * @retval None
   */
-static void MX_SPI1_Init(void)
-{
+	static void MX_SPI1_Init(void)
+	{
 
-  /* USER CODE BEGIN SPI1_Init 0 */
+	  /* USER CODE BEGIN SPI1_Init 0 */
 
-  /* USER CODE END SPI1_Init 0 */
+	  /* USER CODE END SPI1_Init 0 */
 
-  /* USER CODE BEGIN SPI1_Init 1 */
+	  /* USER CODE BEGIN SPI1_Init 1 */
 
-  /* USER CODE END SPI1_Init 1 */
-  /* SPI1 parameter configuration*/
-  hspi1.Instance = SPI1;
-  hspi1.Init.Mode = SPI_MODE_MASTER;
-  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
-  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
-  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
-  hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
-  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
-  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
-  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
-  hspi1.Init.CRCPolynomial = 10;
-  if (HAL_SPI_Init(&hspi1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN SPI1_Init 2 */
+	  /* USER CODE END SPI1_Init 1 */
+	  /* SPI1 parameter configuration*/
+	  hspi1.Instance = SPI1;
+	  hspi1.Init.Mode = SPI_MODE_MASTER;
+	  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
+	  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+	  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
+	  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+	  hspi1.Init.NSS = SPI_NSS_SOFT;
+	  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
+	  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
+	  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+	  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+	  hspi1.Init.CRCPolynomial = 10;
+	  if (HAL_SPI_Init(&hspi1) != HAL_OK)
+	  {
+		Error_Handler();
+	  }
+	  /* USER CODE BEGIN SPI1_Init 2 */
 
-  /* USER CODE END SPI1_Init 2 */
+	  /* USER CODE END SPI1_Init 2 */
 
-}
+	}
 
 /**
   * @brief USART2 Initialization Function
@@ -294,7 +280,6 @@ static void MX_USART2_UART_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN USART2_Init 2 */
-  __HAL_UART_ENABLE_IT(&huart2, UART_IT_RXNE);
 
   /* USER CODE END USART2_Init 2 */
 
@@ -456,6 +441,14 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+void modem_setup(void)
+{
+    HAL_UART_Receive_IT(&huart2, &received_byte, 1);
+    Initialize_Modem();
+    SSL_Config();
+    AWS_MQTT();
+}
 
 
 /* USER CODE END 4 */

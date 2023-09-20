@@ -16,6 +16,9 @@
   ******************************************************************************
   */
 /* USER CODE END Header */
+
+// Define the bootloader function and place it in the .bootloader section
+
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 
@@ -35,13 +38,17 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 // Addresses for the bootloader, config, app, and temp sections
-#define BOOTLOADER_START_ADDR   0x08000000  // Start address of the bootloader section
-#define CONFIG_START_ADDR       0x08020000  // Start address of the config section
-#define APP_START_ADDR          0x08030000  // Start address of the app section
-#define TEMP_START_ADDR         0x08100000  // Start address of the temp section
-#define TEMP_SECTION_SIZE       0x20000     // Size of the temp section (128KB)
+#define BOOTLOADER_START_ADDR   0x8000000  // Start address of the bootloader section
+#define CONFIG_START_ADDR       0x8020000  // Start address of the config section
+#define APP_START_ADDR          0x8040000  // Start address of the app section
+#define TEMP_START_ADDR         0x80C0000  // Start address of the temp section
+#define TEMP_SECTION_SIZE       0x40000     // Size of the temp section (256KB)
 
 
+#define BOOTLOADER_TIMEOUT_MS				5000
+#define CRC_POLYNOMIAL						0xEDB88320
+#define UPDATE_FLAG_VALUE					0xDEADBEEF
+#define UPDATE_FLAG_RESET_VALUE				0xFFFFFFFF
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -68,8 +75,7 @@ static void MX_GPIO_Init(void);
 // Function pointer to the application
 typedef void (*pFunction)(void);
 
-// Define the bootloader function and place it in the .bootloader section
-void bootloader_function(void) __attribute__((section(".bootloader")));
+//void bootloader_function(void) __attribute__((section(".bootloader")));
 
 void jump_to_application(uint32_t app_address) {
     pFunction app_entry = (pFunction) (*(__IO uint32_t*) (app_address + 4));
@@ -77,8 +83,6 @@ void jump_to_application(uint32_t app_address) {
     app_entry();
 }
 
-#define BOOTLOADER_TIMEOUT_MS   5000        // Timeout in milliseconds
-#define CRC_POLYNOMIAL         0xEDB88320  // CRC32 polynomial
 
 // Function to calculate a simple checksum
 // Manual CRC32 calculation
@@ -113,30 +117,85 @@ bool update_application(uint32_t app_size) {
     // Erase the application section before writing
     FLASH_EraseInitTypeDef erase_init;
     erase_init.TypeErase = FLASH_TYPEERASE_SECTORS;
-    erase_init.Sector = FLASH_SECTOR_6; // Adjust based on your microcontroller's memory layout
-    erase_init.NbSectors = 1; // Adjust based on the number of sectors in your application region
-    erase_init.VoltageRange = FLASH_VOLTAGE_RANGE_3; // Adjust based on your voltage range
+    erase_init.Sector = FLASH_SECTOR_6;
+    erase_init.NbSectors = 4;
+    erase_init.VoltageRange = FLASH_VOLTAGE_RANGE_3;
+
+    uint32_t SectorError = 0;  // To capture the sector where an error occurred
     HAL_FLASH_Unlock();
-    HAL_FLASHEx_Erase(&erase_init, NULL);
+    HAL_StatusTypeDef erase_status = HAL_FLASHEx_Erase(&erase_init, &SectorError);
     HAL_FLASH_Lock();
 
+    if (erase_status != HAL_OK) {
+        // Error occurred during flash erase.
+        // Add code to handle this, e.g., log the error or flash an LED
+        return false;
+    }
 
     // Check if the new binary size is valid
     if (app_size <= (APP_START_ADDR - BOOTLOADER_START_ADDR - 4)) {
-        // Copy the new binary
         for (uint32_t i = 0; i < app_size; i += 4) {
-            *app_dest++ = *temp_src++;
+            HAL_FLASH_Unlock();
+            if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, (uint32_t)app_dest, (uint32_t)*temp_src) != HAL_OK) {
+                // Error occurred during flash programming.
+                // Add code to handle this, e.g., log the error or flash an LED
+                HAL_FLASH_Lock();
+                return false;
+            }
+            HAL_FLASH_Lock();
+            app_dest++;
+            temp_src++;
         }
 
         // Reset the flag in the config section
-        uint32_t *config_flag = (uint32_t *)CONFIG_START_ADDR;
-        *config_flag = 0;
+        HAL_FLASH_Unlock();
+        if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, CONFIG_START_ADDR, UPDATE_FLAG_RESET_VALUE) != HAL_OK) {
+            // Error occurred during flag reset.
+            // Add code to handle this, e.g., log the error or flash an LED
+            HAL_FLASH_Lock();
+            return false;
+        }
+        HAL_FLASH_Lock();
 
-        return true; // Update successful
+        return true;  // Update successful
     } else {
-        return false; // Invalid firmware size
+        // Invalid firmware size
+        return false;
     }
 }
+
+
+void bootloader_function(void){
+    uint32_t *config_flag = (uint32_t *)CONFIG_START_ADDR;
+
+    if (*config_flag == UPDATE_FLAG_VALUE) {
+        // Calculate CRC32 of the new firmware in the TEMP section
+        uint32_t calculated_crc = calculate_crc32((uint8_t *)TEMP_START_ADDR, TEMP_SECTION_SIZE);
+        uint32_t *end_marker = (uint32_t *)(TEMP_START_ADDR + TEMP_SECTION_SIZE - sizeof(uint32_t));
+
+        if (calculated_crc == *end_marker) {
+            uint32_t new_firmware_size = (uint32_t)(end_marker - (uint32_t *)TEMP_START_ADDR);
+
+            if (!update_application(new_firmware_size)) {
+                // Handle firmware update error, maybe flash a specific LED
+            }
+        } else {
+            // Handle CRC mismatch error, maybe flash a specific LED
+        }
+    }
+	   // Handle timeout (if needed)
+	   uint32_t start_time = HAL_GetTick();
+	   while (!is_timeout_expired(start_time, BOOTLOADER_TIMEOUT_MS)) {
+	       // Your bootloader code can have additional functionality here
+	   }
+
+	   // Jump to the application
+	   jump_to_application(APP_START_ADDR);
+
+}
+
+
+
 
 /* USER CODE END 0 */
 
@@ -144,7 +203,7 @@ bool update_application(uint32_t app_size) {
   * @brief  The application entry point.
   * @retval int
   */
-int main(void)
+int bl_main(void)
 {
   /* USER CODE BEGIN 1 */
 
@@ -169,37 +228,7 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   /* USER CODE BEGIN 2 */
-
-  uint32_t *config_flag = (uint32_t *)CONFIG_START_ADDR;
-
-   if (*config_flag == 1) {
-	   // Calculate CRC32 of the new firmware in the TEMP section
-	           uint32_t calculated_crc = calculate_crc32((uint8_t *)TEMP_START_ADDR, TEMP_SECTION_SIZE);
-
-	           // Read the last word from the TEMP section as the end marker
-	           uint32_t *end_marker = (uint32_t *)(TEMP_START_ADDR + TEMP_SECTION_SIZE - sizeof(uint32_t));
-
-	           if (calculated_crc == *end_marker) {
-	               // Calculate the size of the new firmware
-	               uint32_t new_firmware_size = (uint32_t)(end_marker - (uint32_t *)TEMP_START_ADDR);
-
-	               // Update the application with the determined size
-	               if (update_application(new_firmware_size)) {
-	                   // Perform a soft reset
-	                   NVIC_SystemReset();
-           }
-       }
-   }
-
-   // Handle timeout (if needed)
-   uint32_t start_time = HAL_GetTick();
-   while (!is_timeout_expired(start_time, BOOTLOADER_TIMEOUT_MS)) {
-       // Your bootloader code can have additional functionality here
-   }
-
-   // Jump to the application
-   jump_to_application(APP_START_ADDR);
-
+  bootloader_function();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -212,6 +241,7 @@ int main(void)
   }
   /* USER CODE END 3 */
 }
+
 
 /**
   * @brief System Clock Configuration
@@ -436,3 +466,4 @@ void assert_failed(uint8_t *file, uint32_t line)
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
+

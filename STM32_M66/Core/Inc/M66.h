@@ -14,25 +14,95 @@
 
 extern UART_HandleTypeDef huart2;
 
+
+
+
 // Addresses for the bootloader, config, app, and temp sections
-#define BOOTLOADER_START_ADDR   0x08000000  // Start address of the bootloader section
-#define CONFIG_START_ADDR       0x08020000  // Start address of the config section
-#define APP_START_ADDR          0x08030000  // Start address of the app section
-#define TEMP_START_ADDR         0x08100000  // Start address of the temp section
+#define BOOTLOADER_START_ADDR   0x8000000  // Start address of the bootloader section
+#define CONFIG_START_ADDR       0x8020000  // Start address of the config section
+#define APP_START_ADDR          0x8040000  // Start address of the app section
+#define TEMP_START_ADDR         0x80C0000  // Start address of the temp section
+#define TEMP_SECTION_SIZE       0x40000     // Size of the temp section (396KB)
+
+#define MAX_URL_LENGTH 256
+extern char firmware_url[MAX_URL_LENGTH];
+extern uint8_t received_byte;
+extern volatile bool data_received_flag;// Change type if needed
+extern uint8_t receive_buffer[]; // Change type and size if needed
+
+#define BUFFER_MAX_SIZE 256
 
 
-void send_at_command(const char* command);
-size_t receive_data(uint8_t* buffer, uint16_t length);
-uint32_t calculate_crc32(uint8_t* data, size_t length);
+// Global variables and buffers specific to MQTT
+#define MQTT_BUFFER_SIZE 512
+
+
+
+#define MAX_FIRMWARE_SIZE 50000 // Adjust as needed
+// Firmware buffer
+extern uint8_t firmware_buffer[MAX_FIRMWARE_SIZE];
+extern size_t firmware_size;
+
+#define CRC_POLYNOMIAL         0xEDB88320  // CRC32 polynomial
+
+
+
+
+uint16_t receive_data(uint8_t* buffer, uint16_t buffer_size);
+uint32_t calculate_crc32(uint8_t* data, uint32_t size);
+bool write_firmware_to_flash(uint8_t* firmware_data, uint32_t firmware_length);
 bool verify_firmware_update(uint8_t* firmware_data, size_t firmware_length);
 bool download_firmware(const char* firmware_url);
 void handle_mqtt_message(const char* message);
 void Initialize_Modem(void);
 void SSL_Config(void);
 void AWS_MQTT(void);
+void handle_mqtt_byte(uint8_t byte);
+void handle_default_byte(uint8_t byte);
+bool is_firmware_size_valid(size_t firmware_length);
+uint32_t extract_received_crc(uint8_t* firmware_data, size_t firmware_length);
+bool set_update_flag(void);
+void firmware_update_handler(void);
+void resetAction();
 
 
+#define UART_BUFFER_SIZE 256
 
+typedef struct {
+    uint8_t data[UART_BUFFER_SIZE];
+    uint16_t write_index;
+    uint16_t read_index;
+} UART_BufferTypeDef;
 
+extern UART_BufferTypeDef uart_buffer;
+enum FwUpdateState {
+    IDLE,
+    DOWNLOAD_PENDING,
+    VERIFY_PENDING,
+    WRITE_PENDING,
+    RESET_PENDING,
+    ACTION_IN_PROGRESS,
+    ERROR_STATE
+};
+extern enum FwUpdateState fwUpdateState;
+bool actionStarted(enum FwUpdateState state);
+void handleRetry(enum FwUpdateState state);
+
+typedef enum {
+    MODE_DEFAULT,
+    MODE_MQTT
+} UART_Mode;
+
+extern UART_Mode current_mode;
+
+typedef enum {
+    INIT_HTTP,
+    SET_HTTP_URL,
+    INITIATE_HTTP_GET,
+    RECEIVE_HTTP_RESPONSE,
+    DOWNLOAD_COMPLETE,
+    DOWNLOAD_ERROR
+} download_state_t;
+extern download_state_t current_state;
 
 #endif /* INC_M66_H_ */
