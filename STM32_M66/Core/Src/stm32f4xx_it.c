@@ -230,8 +230,41 @@ void USART3_IRQHandler(void)
 }
 
 /* USER CODE BEGIN 1 */
+//void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+//    if (huart->Instance == USART2) {
+//        // Process the received byte
+//        if (current_mode == MODE_MQTT) {
+//            handle_mqtt_byte(received_byte);
+//        } else {
+//            handle_default_byte(received_byte);
+//        }
+//
+//        // Reactivate the UART receive interrupt
+//        HAL_UART_Receive_IT(&huart2, &received_byte, 1);
+//
+//        // Indicate that new data has been received
+//        data_received_flag = true;
+//    }
+//}
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
     if (huart->Instance == USART2) {
+        // Insert the received byte into your UART buffer
+        uart_buffer.data[uart_buffer.write_index] = received_byte;
+        uart_buffer.write_index++;
+
+        if (uart_buffer.write_index >= UART_BUFFER_SIZE) {
+            uart_buffer.write_index = 0; // Wrap around
+        }
+
+        // Handle buffer overflow (optional, but recommended)
+        if (uart_buffer.write_index == uart_buffer.read_index) {
+            // Buffer is full; handle the overflow. For now, let's reset the read index.
+            uart_buffer.read_index++;
+            if (uart_buffer.read_index >= UART_BUFFER_SIZE) {
+                uart_buffer.read_index = 0;
+            }
+        }
+
         // Process the received byte
         if (current_mode == MODE_MQTT) {
             handle_mqtt_byte(received_byte);
@@ -246,4 +279,5 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
         data_received_flag = true;
     }
 }
+
 /* USER CODE END 1 */

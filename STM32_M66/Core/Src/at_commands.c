@@ -51,7 +51,7 @@ at_command_state_t check_at_command_response(uint16_t timeout) {
             // Reset the flag after processing
             data_received_flag = false;
         } else {
-            uint32_t current_time = get_system_time(); // Needs your implementation
+            uint32_t current_time = get_system_time();
             if ((current_time - at_command_start_time) >= timeout) {
                 at_state = AT_RESPONSE_TIMEOUT;
             }

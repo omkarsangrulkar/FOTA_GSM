@@ -38,20 +38,20 @@ extern uint8_t receive_buffer[]; // Change type and size if needed
 
 
 
-#define MAX_FIRMWARE_SIZE 50000 // Adjust as needed
+#define MAX_FIRMWARE_SIZE 51200 // Adjust as needed
 // Firmware buffer
 extern uint8_t firmware_buffer[MAX_FIRMWARE_SIZE];
-extern size_t firmware_size;
+extern uint32_t firmware_size;
 
 #define CRC_POLYNOMIAL         0xEDB88320  // CRC32 polynomial
 
 
 
 
-uint16_t receive_data(uint8_t* buffer, uint16_t buffer_size);
+uint32_t receive_data(uint8_t* buffer, uint32_t buffer_size);
 uint32_t calculate_crc32(uint8_t* data, uint32_t size);
 bool write_firmware_to_flash(uint8_t* firmware_data, uint32_t firmware_length);
-bool verify_firmware_update(uint8_t* firmware_data, size_t firmware_length);
+bool verify_firmware_update();
 bool download_firmware(const char* firmware_url);
 void handle_mqtt_message(const char* message);
 void Initialize_Modem(void);
@@ -59,11 +59,19 @@ void SSL_Config(void);
 void AWS_MQTT(void);
 void handle_mqtt_byte(uint8_t byte);
 void handle_default_byte(uint8_t byte);
-bool is_firmware_size_valid(size_t firmware_length);
-uint32_t extract_received_crc(uint8_t* firmware_data, size_t firmware_length);
+bool is_firmware_size_valid(uint32_t firmware_length);
+uint32_t extract_received_crc(uint8_t* firmware_data, uint32_t firmware_length);
 bool set_update_flag(void);
 void firmware_update_handler(void);
 void resetAction();
+bool firmware_update_process();
+bool find_end_marker(uint8_t *buffer, uint32_t size);
+void clear_uart_buffer ();
+uint8_t* find_end_marker_position(uint8_t *buffer, uint32_t size);
+
+HAL_StatusTypeDef erase_flash(uint32_t start_address, uint32_t end_address);
+uint32_t get_flash_sector(uint32_t address);
+HAL_StatusTypeDef write_to_flash(uint32_t address, uint8_t *data, uint32_t length);
 
 
 #define UART_BUFFER_SIZE 256
@@ -104,5 +112,14 @@ typedef enum {
     DOWNLOAD_ERROR
 } download_state_t;
 extern download_state_t current_state;
+
+typedef enum {
+    WAIT_FOR_CONNECT,
+    RECEIVE_DATA,
+    WRITE_TO_FLASH,
+    DOWNLOAD_DONE,
+    DOWNLOAD_FAILED
+} UpdateState;
+extern UpdateState current_update_state;
 
 #endif /* INC_M66_H_ */
