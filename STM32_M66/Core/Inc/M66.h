@@ -43,7 +43,7 @@ extern uint8_t receive_buffer[]; // Change type and size if needed
 extern uint8_t firmware_buffer[MAX_FIRMWARE_SIZE];
 extern uint32_t firmware_size;
 
-#define CRC_POLYNOMIAL         0xEDB88320  // CRC32 polynomial
+#define CRC_POLYNOMIAL         0x04C11DB7  // CRC32 polynomial
 
 
 
@@ -68,6 +68,7 @@ bool firmware_update_process();
 bool find_end_marker(uint8_t *buffer, uint32_t size);
 void clear_uart_buffer ();
 uint8_t* find_end_marker_position(uint8_t *buffer, uint32_t size);
+bool check_for_uart_error();
 
 HAL_StatusTypeDef erase_flash(uint32_t start_address, uint32_t end_address);
 uint32_t get_flash_sector(uint32_t address);

@@ -60,6 +60,49 @@ at_command_state_t check_at_command_response(uint16_t timeout) {
     return at_state;
 }
 
+bool command_acknowledged = true;  // This flag is true when the last sent command was acknowledged
+
+void send_at_command_blocking(const char* command, const char* expected_resp, uint16_t timeout) {
+    // Reset the acknowledged flag
+    command_acknowledged = false;
+
+    // Send the AT command
+    send_at_command(command, expected_resp);
+
+    uint32_t start_time = get_system_time();
+
+    // Block until the command is acknowledged (either responded or timed out)
+    while (!command_acknowledged) {
+        check_at_command_response(timeout);
+
+        uint32_t current_time = get_system_time();
+        if ((current_time - start_time) >= timeout) {
+            break;
+        }
+    }
+}
+
+//at_command_state_t check_at_command_response(uint16_t timeout) {
+//    if (at_state == AT_WAITING_RESPONSE) {
+//        if (data_received_flag) {
+//            if (strstr((char*)receive_buffer, expected_at_response) != NULL) {
+//                at_state = AT_RESPONSE_RECEIVED;
+//                command_acknowledged = true;  // Set the acknowledged flag when the response is received
+//            }
+//
+//            // Reset the flag after processing
+//            data_received_flag = false;
+//        } else {
+//            uint32_t current_time = get_system_time();
+//            if ((current_time - at_command_start_time) >= timeout) {
+//                at_state = AT_RESPONSE_TIMEOUT;
+//                command_acknowledged = true;  // Set the acknowledged flag when the response is timed out
+//            }
+//        }
+//    }
+//    return at_state;
+//}
+
 void UART_Send(const char* str) {
     HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);  // Transmitting via UART2 in this example
 }

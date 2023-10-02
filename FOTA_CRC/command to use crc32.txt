@@ -1,0 +1,1 @@
+python crc32_calculator.py <path_to_your_file>

@@ -19,8 +19,8 @@
 #include <stddef.h>
 
 char APN[] = "airtelgprs.com";
-const uint32_t SHORT_DELAY = 300;   // in milliseconds
-const uint32_t DELAY = 10000;  // in milliseconds
+const uint32_t SHORT_DELAY = 1000;   // in milliseconds
+const uint32_t DELAY = 5000;  // in milliseconds
 const uint32_t LONG_DELAY = 20000;  // in milliseconds
 
 char firmware_url[MAX_URL_LENGTH] = {0};
@@ -58,12 +58,13 @@ enum FwUpdateState fwUpdateState = IDLE;
 download_state_t current_state = INIT_HTTP;
 
 #define UART_TIMEOUT 30000
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 4096
 #define END_MARKER "\r\nOK\r\n"
 #define START_FLASH_ADDRESS 0x80C0000
 #define END_FLASH_ADDRESS (START_FLASH_ADDRESS + 0x40000)
-#define DISABLE_UART_INTERRUPT()
-#define ENABLE_UART_INTERRUPT()
+#define UART_INSTANCE  huart2
+#define DISABLE_UART_INTERRUPT()		__HAL_UART_DISABLE_IT(&UART_INSTANCE, UART_IT_RXNE);
+#define ENABLE_UART_INTERRUPT()			__HAL_UART_ENABLE_IT(&UART_INSTANCE, UART_IT_RXNE);
 #define DOUBLE_BUFFER_SIZE (BUFFER_SIZE * 2)
 uint8_t receive_double_buffer[DOUBLE_BUFFER_SIZE];
 uint8_t *active_buffer = &receive_double_buffer[0];
@@ -87,43 +88,6 @@ void Delay(uint32_t milliseconds) {
         // Adjust the loop count or use a hardware timer for more precise delays
     }
 }
-
-//void Initialize_Modem(void)
-//{
-////	char rxData[100];
-////	 do {
-////		 HAL_UART_Transmit(&huart2, (uint8_t *)"AT\r\n", strlen("AT\r\n"), 300);
-////		 HAL_Delay(300);
-////		 HAL_UART_Receive(&huart2, (uint8_t *)rxData, sizeof(100), 300);
-////	 }
-////	 while(strstr(rxData, "OK") == NULL);
-////	 do {
-////		 HAL_UART_Transmit(&huart2, (uint8_t *)"AT+CPIN?\r\n", strlen("AT+CPIN?\r\n"), 300);
-////		 HAL_Delay(300);
-////		 HAL_UART_Receive(&huart2, (uint8_t *)rxData, sizeof(100), 300);
-////	 }
-////	 while(strstr(rxData, "+CPIN: READY") == NULL);
-////	 HAL_Delay(300);
-//	HAL_UART_Transmit(&huart2, (uint8_t *)"ATE0\r\n", strlen("ATE0\r\n"), 1000);
-//	HAL_Delay(1000);
-//	HAL_UART_Transmit(&huart2, (uint8_t *)"AT+CPIN?\r\n", strlen("AT+CPIN?\r\n"), 1000);
-//	HAL_Delay(3000);
-//	HAL_UART_Transmit(&huart2, (uint8_t *)"AT+CREG?\r\n", strlen("AT+CREG?\r\n"), 1000);
-//	HAL_Delay(1000);
-//	HAL_UART_Transmit(&huart2, (uint8_t *)"AT+QICSGP=1,\"airtelgprs.com\"\r\n", strlen("AT+QICSGP=1,\"airtelgprs.com\"\r\n"), 1000);
-////	HAL_UART_Transmit(&huart2, (uint8_t *)',"airtelgprs.com"\r\n', strlen(',"airtelgprs.com"\r\n'), HAL_MAX_DELAY);
-//	HAL_Delay(1000);
-//	HAL_UART_Transmit(&huart2, (uint8_t *)"AT+QICSGP?\r\n", strlen("AT+QICSGP?\r\n"), 1000);
-//	HAL_Delay(1000);
-//	HAL_UART_Transmit(&huart2, (uint8_t *)"AT+QIREGAPP\r\n", strlen("AT+QIREGAPP\r\n"), 1000);
-//	HAL_Delay(1000);
-//	HAL_UART_Transmit(&huart2, (uint8_t *)"AT+QIACT\r\n", strlen("AT+QIACT\r\n"), 1000);
-//	HAL_Delay(1000);
-//	HAL_UART_Transmit(&huart2, (uint8_t *)"AT+QILOCIP\r\n", strlen("AT+QILOCIP\r\n"), 1000);
-//	HAL_Delay(1000);
-//
-//}
-//Have to work on certificate configuration.
 void Initialize_Modem(void)
 {
 //    at_state = AT_IDLE; // Make sure the state machine is at its initial state
@@ -141,7 +105,7 @@ void Initialize_Modem(void)
     at_state = AT_IDLE;
 
     // Proceed with other commands using the same pattern
-    send_at_command("AT", "OK");
+    send_at_command("ATE0", "OK");
     while (check_at_command_response(SHORT_DELAY) == AT_WAITING_RESPONSE);
     if(at_state != AT_RESPONSE_RECEIVED)
     {
@@ -165,7 +129,7 @@ void Initialize_Modem(void)
      {
          return;
      }
-
+     HAL_Delay(SHORT_DELAY);
 
 
       send_at_command("AT+QICSGP=1,\"airtelgprs.com\"", "OK");
@@ -184,7 +148,7 @@ void Initialize_Modem(void)
            return;
        }
 
-
+       HAL_Delay(SHORT_DELAY);
 
         send_at_command("AT+QIREGAPP", "OK");
         while (check_at_command_response(SHORT_DELAY) == AT_WAITING_RESPONSE);
@@ -192,7 +156,7 @@ void Initialize_Modem(void)
         {
             return;
         }
-//        HAL_Delay(DELAY);
+        HAL_Delay(SHORT_DELAY);
 
 
          send_at_command("AT+QIACT", "OK");
@@ -201,12 +165,11 @@ void Initialize_Modem(void)
          {
              return;
          }
-         HAL_Delay(1000);
-
+         HAL_Delay(SHORT_DELAY);
 
 //         HAL_UART_Transmit(&huart2, (uint8_t *)"AT+QILOCIP\r\n", strlen("AT+QILOCIP\r\n"), 1000);
          UART_Send("AT+QILOCIP\r\n");
-         Delay(1000);
+         Delay(SHORT_DELAY);
 
 
 
@@ -337,10 +300,6 @@ void AWS_MQTT(void){
     {
         return;
     }
-//	UART_Send(mqtt_open_command);
-//	HAL_Delay(LONG_DELAY);
-//	send_at_command("AT+QMTOPEN=0,\"%s\",1883\r\n", mqtt_broker);
-//	send_at_command("AT+QMTCONN=0,\"%s\"\r\n", client_id);
 	char mqtt_conn_command[128];
 	sprintf(mqtt_conn_command, "AT+QMTCONN=0,\"%s\"", client_id);
 	send_at_command(mqtt_conn_command, "+QMTCONN: 0,0,0");
@@ -349,7 +308,6 @@ void AWS_MQTT(void){
     {
         return;
     }
-//    UART_Send(mqtt_conn_command);
 
     at_state = AT_IDLE;
 	char mqtt_sub_command[128];
@@ -360,57 +318,38 @@ void AWS_MQTT(void){
     {
         return;
     }
-//	UART_Send(mqtt_sub_command);
     current_mode = MODE_MQTT;
 }
 
 
 //AT+QMTOPEN=0,"a2lrvn2efyqxdn-ats.iot.us-east-1.amazonaws.com",8883
 
-uint32_t receive_data(uint8_t* buffer, uint32_t buffer_size){
+uint32_t receive_data(uint8_t* buffer, uint32_t buffer_size) {
     uint32_t bytes_read = 0;
     uint32_t last_data_time = HAL_GetTick(); // Initialize with current tick
 
-    DISABLE_UART_INTERRUPT();
+//    DISABLE_UART_INTERRUPT();
 
     while (bytes_read < buffer_size) {
-        if ((HAL_GetTick() - last_data_time) > UART_TIMEOUT) {
-            break;  // Timeout if no new data for a defined duration
-        }
+        if (uart_buffer.read_index != uart_buffer.write_index) {
+            buffer[bytes_read++] = uart_buffer.data[uart_buffer.read_index++];
 
-        // Only process data if there's new data in the UART buffer
-        while (uart_buffer.read_index != uart_buffer.write_index && bytes_read < buffer_size) {
-            buffer[bytes_read] = uart_buffer.data[uart_buffer.read_index];
-            bytes_read++;
-            last_data_time = HAL_GetTick();  // Update the last data time when new data is received
+            // Update the last data time since new data is received
+            last_data_time = HAL_GetTick();
 
-            uart_buffer.read_index++;
+            // Handle circular buffer wrapping
             if (uart_buffer.read_index >= UART_BUFFER_SIZE) {
                 uart_buffer.read_index = 0;
             }
+        } else if ((HAL_GetTick() - last_data_time) > UART_TIMEOUT) {
+            break;  // Timeout if no new data for a defined duration
         }
     }
 
-    ENABLE_UART_INTERRUPT();
+//    ENABLE_UART_INTERRUPT();
 
     return bytes_read;
 }
-// Function to receive data from Quectel M66 module
-// Updated receive_data function
-//uint32_t receive_data(uint8_t* buffer, uint32_t size) {
-//
-//    size_t bytes_received = 0;
-//
-//    HAL_StatusTypeDef status = HAL_UART_Receive(&huart2, buffer, size, 10000);
-//
-//    if (status == HAL_OK) {
-//        // UART data received successfully, update the number of bytes received
-//        bytes_received = size;
-//    }
-
-    // Return the actual number of bytes received
-//    return bytes_received;
-//}
 
 void handle_default_byte(uint8_t byte) {
 	receive_buffer[buffer_idx++] = byte;
@@ -481,154 +420,16 @@ void handle_mqtt_message(const char* message) {
     }
 }
 
-//// Implement a function to handle MQTT messages. When an update notification is received, extract the firmware URL.
-//void handle_mqtt_message(const char* message) {
-////    // Parse the MQTT message (assumes it's in JSON format)
-////    // Extract the firmware URL from the message
-////
-////    // Example JSON parsing (for demonstration purposes):
-////     char* firmware_url = NULL;
-////     char* message_type = NULL;
-////
-////    // Parse the JSON message to extract firmware_url and message_type
-////    // You may need to use a JSON parsing library or write your parser
-////    // Example: {"message_type":"update_available","firmware_url":"http://your-fota-server/firmware.bin"}
-////    if (sscanf(message, "{\"message_type\":\"%[^\"]\",\"firmware_url\":\"%[^\"]\"}", message_type, firmware_url) == 2) {
-////        if (strcmp(message_type, "update_available") == 0) {
-////
-////        	if(download_firmware(firmware_url));
-////
-////        }
-////    }
-//    // Implement logic to handle other message types or errors.
-//	const char* json_start = strchr(message, '{'); // Find the first '{' character
-//
-//	cJSON* root = cJSON_Parse(json_start);
-//
-//	if (root == NULL) {
-//	    const char* error_ptr = cJSON_GetErrorPtr();
-//	    if (error_ptr != NULL) {
-//	        fprintf(stderr, "JSON parsing error before: %s\n", error_ptr);
-//	    }
-//	}
-//	    if (root != NULL) {
-//
-//
-//	        cJSON* messageTypeObj = cJSON_GetObjectItem(root, "message_type");
-//	        cJSON* firmwareUrlObj = cJSON_GetObjectItem(root, "firmware_url");
-//
-//	        if (messageTypeObj != NULL && firmwareUrlObj != NULL) {
-//	            const char* message_type = messageTypeObj->valuestring;
-//	            const char* firmware_url = firmwareUrlObj->valuestring;
-////	            send_at_command(firmware_url);
-//
-//	            if (strcmp(message_type, "update_available") == 0) {
-//	                            // The message is of type "update_available"
-//	                            // You can now use the extracted firmware URL in the 'firmware_url' variable.
-//	            	if(download_firmware(firmware_url)){
-//	            		if(verify_firmware_update(firmware_buffer, firmware_size)){
-//	            			if(write_firmware_to_flash(firmware_buffer, firmware_size)){
-//	            				NVIC_SystemReset();
-//
-//	            			}
-//	            		}
-//	            	}
-//	                        }
-//	                    }
-//
-//	                    // Free the cJSON object when done
-//	                    cJSON_Delete(root);
-//	                }
-//
-//
-//}
-
-//bool download_firmware(const char* firmware_url) {
-//    // Send AT command to set up HTTP connection
-////    send_at_command("AT+QHTTPCFG=\"contextid\",1\r\n");
-////    send_at_command("AT+QSSLCFG=\"https\",1\r\n");
-////    HAL_Delay(1000);
-//	HAL_UART_Transmit(&huart2, (uint8_t *)"AT+QSSLCFG=\"https\",1\r\n", strlen("AT+QSSLCFG=\"https\",1\r\n"), 1000);
-//	Delay(1000);
-////    send_at_command("AT+QSSLCFG=\"httpsctxi\",1\r\n");
-////    HAL_Delay(1000);
-//    HAL_UART_Transmit(&huart2, (uint8_t *)"AT+QSSLCFG=\"httpsctxi\",1\r\n", strlen("AT+QSSLCFG=\"httpsctxi\",1\r\n"), 1000);
-//    Delay(1000);
-//
-//    // Send AT command to set the URL for HTTP GET request
-//    char http_get_command[128];
-//    sprintf(http_get_command, "AT+QHTTPURL=%d,60\r\n", strlen(firmware_url));
-//    send_at_command(http_get_command);
-//    Delay(1000);
-//    send_at_command(firmware_url);
-////    send_at_command("\n");
-//    Delay(1000);
-//
-//    // Send AT command to initiate HTTP GET request
-//    send_at_command("AT+QHTTPGET=60\r\n");
-//    Delay(20000);
-//    HAL_UART_Transmit(&huart2, (uint8_t *)"ATE0\r\n", strlen("ATE0\r\n"), 1000);
-//
-////    send_at_command("AT+QHTTPREAD=30\r\n");
-//    HAL_UART_Transmit(&huart2, (uint8_t *)"AT+QHTTPREAD=30\r\n", strlen("AT+QHTTPREAD=30\r\n"), 1000);
-//
-//    // Wait for the HTTP response (you may need to implement proper response handling)
-//    // Receive and store firmware data in the firmware_buffer
-//    // You should implement logic to handle HTTP response and store data here.
-//
-//    // Example: Receive data until the end of HTTP response
-//    uint8_t receive_buffer[256];
-//    size_t bytes_received;
-//    while (true) {
-//        // Receive data from UART and get the number of bytes received
-//        bytes_received = receive_data(receive_buffer, sizeof(receive_buffer));
-//
-//        // Check for the end of HTTP response and break if found
-//        char* end_of_response = strstr((char*)receive_buffer, "\r\nOK\r\n");
-//        if (end_of_response != NULL) {
-//            // Calculate the length of the HTTP response data
-//            size_t response_length = end_of_response - (char*)receive_buffer;
-//
-//            // Ensure that the firmware_buffer has enough space
-//            if (firmware_size + response_length <= MAX_FIRMWARE_SIZE) {
-//                // Copy received data to the firmware_buffer
-//                memcpy(firmware_buffer + firmware_size, receive_buffer, response_length);
-//                firmware_size += response_length;
-//            } else {
-//                // Firmware buffer is full, handle the error as needed
-//                return false;
-//            }
-//
-//            break; // End of HTTP response found
-//        } else {
-//            // Copy received data to the firmware_buffer
-//            if (firmware_size + bytes_received <= MAX_FIRMWARE_SIZE) {
-//                memcpy(firmware_buffer + firmware_size, receive_buffer, bytes_received);
-//                firmware_size += bytes_received;
-//            } else {
-//                // Firmware buffer is full, handle the error as needed
-//                return false;
-//            }
-//        }
-//    }
-//    // Check if firmware download was successful
-//    if (firmware_size > 0) {
-//        return true;
-//    } else {
-//        return false;
-//    }
-//}
-
-
 bool download_firmware(const char* firmware_url) {
 	bool result = false; // Default return value
     switch (current_state) {
         case INIT_HTTP:
             send_at_command("AT+QSSLCFG=\"https\",1", "OK");
+            HAL_Delay(SHORT_DELAY);
             if (check_at_command_response(DELAY) == AT_RESPONSE_RECEIVED) {
             	send_at_command("AT+QSSLCFG=\"httpsctxi\",1", "OK");
 //            	if (check_at_command_response(DELAY) == AT_RESPONSE_RECEIVED) {
-            		Delay(1000);
+            		HAL_Delay(SHORT_DELAY);
             		current_state = SET_HTTP_URL;
             		firmware_download_busy = false;
 //            	}
@@ -642,10 +443,15 @@ bool download_firmware(const char* firmware_url) {
             char http_get_command[128];
             sprintf(http_get_command, "AT+QHTTPURL=%d,60", strlen(firmware_url));
             send_at_command(http_get_command, "CONNECT");
-            Delay(1000);
+            while (check_at_command_response(SHORT_DELAY) == AT_WAITING_RESPONSE);
+            if(at_state != AT_RESPONSE_RECEIVED)
+            {
+            	current_state = DOWNLOAD_ERROR;
+            	firmware_download_busy = false;
+            }
 //            send_at_command(firmware_url, "OK");
             UART_Send(firmware_url);
-            Delay(1000);
+            HAL_Delay(DELAY);
             firmware_download_busy = false;
             current_state = INITIATE_HTTP_GET;
 //            if (check_at_command_response(DELAY) == AT_RESPONSE_RECEIVED) {
@@ -663,14 +469,25 @@ bool download_firmware(const char* firmware_url) {
 //        	UART_Send("AT+QHTTPGET=60");
 //        	Delay(1000);
 //        	current_state = RECEIVE_HTTP_RESPONSE;
+
             send_at_command("AT+QHTTPGET=60", "OK");
-            if (check_at_command_response(DELAY) == AT_RESPONSE_RECEIVED) {
-                current_state = RECEIVE_HTTP_RESPONSE;
-                firmware_download_busy = false;
-            } else if (check_at_command_response(LONG_DELAY) == AT_RESPONSE_TIMEOUT) {
-                current_state = DOWNLOAD_ERROR;
-//                firmware_download_busy = false;
+            while (check_at_command_response(LONG_DELAY) == AT_WAITING_RESPONSE);
+            if(at_state != AT_RESPONSE_RECEIVED)
+            {
+            	current_state = DOWNLOAD_ERROR;
+            	firmware_download_busy = false;
+            }else{
+            	HAL_Delay(LONG_DELAY);
+            	current_state = RECEIVE_HTTP_RESPONSE;
+            	firmware_download_busy = false;
             }
+//            if (check_at_command_response(DELAY) == AT_RESPONSE_RECEIVED) {
+//                current_state = RECEIVE_HTTP_RESPONSE;
+//                firmware_download_busy = false;
+//            } else if (check_at_command_response(LONG_DELAY) == AT_RESPONSE_TIMEOUT) {
+//                current_state = DOWNLOAD_ERROR;
+////                firmware_download_busy = false;
+//            }
             break;
 
 
@@ -690,6 +507,7 @@ bool download_firmware(const char* firmware_url) {
 
         case DOWNLOAD_ERROR:
 //            current_state = INIT_HTTP;  // Reset for next time
+//            read_request = false;
 //            firmware_download_busy = false;
             break;
 
@@ -700,28 +518,46 @@ bool download_firmware(const char* firmware_url) {
 }
 
 // Verify firmware update with CRC
+//bool verify_firmware_update() {
+//    // Calculate the starting address of the firmware in flash
+//    uint8_t* firmware_data = (uint8_t*) START_FLASH_ADDRESS;
+//
+//    // Calculate the length of the firmware data by excluding the CRC
+//    uint32_t firmware_length = current_flash_address - START_FLASH_ADDRESS - sizeof(uint32_t);
+//
+//    // Ensure that the firmware length is valid
+//    if (!is_firmware_size_valid(firmware_length)) {
+//        return false;  // Firmware data length is invalid
+//    }
+//
+//    // Address where the appended CRC is stored
+//    uint32_t* stored_crc_ptr = (uint32_t*)(START_FLASH_ADDRESS + firmware_length);
+//
+//    // Calculate CRC for the stored firmware data
+//    uint32_t calculated_crc = calculate_crc32(firmware_data, firmware_length);
+//
+//    // Compare the stored and calculated CRC values
+//    return (*stored_crc_ptr == calculated_crc);
+//}
+//
 bool verify_firmware_update() {
     // Calculate the starting address of the firmware in flash
     uint8_t* firmware_data = (uint8_t*) START_FLASH_ADDRESS;
 
-    // Calculate the length of the firmware data by excluding the CRC
-    uint32_t firmware_length = current_flash_address - START_FLASH_ADDRESS - sizeof(uint32_t);
+    // Calculate the length of the firmware data including the appended CRC
+    uint32_t firmware_length_with_crc = current_flash_address - START_FLASH_ADDRESS;
 
-    // Ensure that the firmware length is valid
-    if (!is_firmware_size_valid(firmware_length)) {
+    // Ensure that the firmware length is valid (this should also account for the CRC32 size)
+    if (!is_firmware_size_valid(firmware_length_with_crc)) {
         return false;  // Firmware data length is invalid
     }
 
-    // Address where the appended CRC is stored
-    uint32_t* stored_crc_ptr = (uint32_t*)(START_FLASH_ADDRESS + firmware_length);
+    // Calculate CRC for the stored firmware data (including the appended CRC)
+    uint32_t calculated_crc = calculate_crc32(firmware_data, firmware_length_with_crc);
 
-    // Calculate CRC for the stored firmware data
-    uint32_t calculated_crc = calculate_crc32(firmware_data, firmware_length);
-
-    // Compare the stored and calculated CRC values
-    return (*stored_crc_ptr == calculated_crc);
+    // If the calculation is correct, the CRC result should be 0
+    return (calculated_crc == 0x0);
 }
-
 
 
 bool is_firmware_size_valid(uint32_t firmware_length) {
@@ -739,18 +575,18 @@ uint32_t calculate_crc32(uint8_t *data, uint32_t size) {
     uint32_t crc = 0xFFFFFFFF;
 
     for (uint32_t i = 0; i < size; i++) {
-        crc ^= data[i];
+        crc ^= ((uint32_t)data[i]) << 24;
 
         for (uint32_t j = 0; j < 8; j++) {
-            if (crc & 0x00000001) {
-                crc = (crc >> 1) ^ CRC_POLYNOMIAL;
+            if (crc & 0x80000000) {
+                crc = (crc << 1) ^ CRC_POLYNOMIAL;
             } else {
-                crc = crc >> 1;
+                crc = crc << 1;
             }
         }
     }
 
-    return ~crc;
+    return crc;
 }
 
 bool write_firmware_to_flash(uint8_t* firmware_data, uint32_t firmware_length) {
@@ -847,12 +683,14 @@ void firmware_update_handler(void)
         case WRITE_PENDING:
             if (!firmware_write_busy) {
                 firmware_write_busy = true;
-//                if (write_firmware_to_flash(firmware_buffer, firmware_size)) {
+                if (!set_update_flag()) {
+                	HAL_FLASH_Lock();
                     fwUpdateState = RESET_PENDING;
+                    firmware_write_busy = false;
                     resetAction();
-//                } else {
-////                    firmware_write_busy = false; // Reset the flag if writing fails
-//                }
+                } else {
+//                    firmware_write_busy = false; // Reset the flag if writing fails
+                }
             }
             break;
 
@@ -879,17 +717,22 @@ void resetAction() {
 }
 
 bool firmware_update_process() {
+    bool success = false;
+    const uint8_t max_retries = 3; // Define max retries as per your requirements
+    uint8_t retry_count = 0;
+    while (!success && retry_count < max_retries) {
     // Attempt to erase flash
     if (HAL_OK != erase_flash(START_FLASH_ADDRESS, END_FLASH_ADDRESS)) {
         // Handle error: Erasing flash failed
-        return false;
+        retry_count++;
+        continue; // Go to next iteration to retry
     }
 
     bool end_marker_found = false;
     bool first_marker_skipped = false;
     do {
         if (!read_request) {
-            send_at_command("AT+QHTTPREAD=30\r\n", "CONNECT");
+            send_at_command("AT+QHTTPREAD=30\r\n", "CONNECT\r\n");
             while (check_at_command_response(LONG_DELAY) == AT_WAITING_RESPONSE);
 
             if (at_state != AT_RESPONSE_RECEIVED) {
@@ -909,7 +752,9 @@ bool firmware_update_process() {
             }
 
             buffer_index += bytes_received;
-
+            if (check_for_uart_error()) {
+            	break; // If an error is detected, break out of the loop to restart the process
+            }
 
             if (find_end_marker(active_buffer, buffer_index)) {
 //            	uint8_t *end_marker_pos = find_end_marker_position(active_buffer, buffer_index);
@@ -951,21 +796,44 @@ bool firmware_update_process() {
 //                    break;
 //
 //                }
-                end_marker_found = true;
-                buffer_index = (uint32_t)(find_end_marker_position(active_buffer, buffer_index) - active_buffer) + strlen(END_MARKER);
-                // Switch buffers immediately
-                uint8_t *temp = active_buffer;
-                active_buffer = write_buffer;
-                write_buffer = temp;
+                if (first_marker_skipped){
+                	end_marker_found = true;
+                	buffer_index = (uint32_t)(find_end_marker_position(active_buffer, buffer_index) - active_buffer);
+                	// Subtract the length of the END_MARKER to exclude it from the write.
+//                	buffer_index -= strlen(END_MARKER);
 
-                // Write data to flash
-                uint32_t residue = buffer_index % 4;
-                uint32_t write_size = buffer_index - residue;
-                if (HAL_OK != write_to_flash(current_flash_address, write_buffer, write_size)) {
-                    return false;
+                	// Switch buffers immediately
+                	uint8_t *temp = active_buffer;
+                	active_buffer = write_buffer;
+                	write_buffer = temp;
+
+                	// Write data to flash
+                	uint32_t residue = buffer_index % 4;
+                	uint32_t write_size = buffer_index - residue;
+                	if (HAL_OK != write_to_flash(current_flash_address, write_buffer, write_size)) {
+                	    return false;
+                	}
+                	current_flash_address += write_size;
+                	buffer_index = residue;
+
+                }else{
+                	first_marker_skipped = true;
+//                    buffer_index = (uint32_t)(find_end_marker_position(active_buffer, buffer_index) - active_buffer) + strlen(END_MARKER);
+//                    // Switch buffers immediately
+//                    uint8_t *temp = active_buffer;
+//                    active_buffer = write_buffer;
+//                    write_buffer = temp;
+//
+//                    // Write data to flash
+//                    uint32_t residue = buffer_index % 4;
+//                    uint32_t write_size = buffer_index - residue;
+//                    if (HAL_OK != write_to_flash(current_flash_address, write_buffer, write_size)) {
+//                        return false;
+//                    }
+//                    current_flash_address += write_size;
+//                    buffer_index = residue;
                 }
-                current_flash_address += write_size;
-                buffer_index = residue;
+
 
                 break;
 
@@ -997,11 +865,25 @@ bool firmware_update_process() {
         buffer_index = residue;
 
     } while (!end_marker_found);
-    current_state = DOWNLOAD_COMPLETE;
-    return true; // Firmware update was successful
+    if (end_marker_found && !check_for_uart_error()) {
+        success = true; // If the end marker was found and no error occurred, the process was successful
+    } else {
+    	read_request = false;
+        retry_count++;
+    }
+}
+    if (success) {
+        current_state = DOWNLOAD_COMPLETE;
+        return true;
+    } else {
+        current_state = DOWNLOAD_ERROR;
+        return false; // Firmware update was unsuccessful after max retries
+    }
+//    current_state = DOWNLOAD_COMPLETE;
+//    return true; // Firmware update was successful
 }
 	bool find_end_marker(uint8_t *buffer, uint32_t size) {
-		for (uint32_t i = 0; i < size - strlen(END_MARKER) + 1; i++) {
+		for (uint32_t i = 0; i < size + 1; i++) {
 			if (memcmp(&buffer[i], END_MARKER, strlen(END_MARKER)) == 0) {
 				return true;
 			}
@@ -1059,6 +941,12 @@ HAL_StatusTypeDef write_to_flash(uint32_t address, uint8_t *data, uint32_t lengt
 
     for (uint32_t i = 0; i < length; i += 4) {
         status = HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, address + i, *(uint32_t*)(data + i));
+        if(*(uint32_t*)(address + i) != *(uint32_t*)(data + i)) {
+            // Handle data mismatch error
+            firmware_write_busy = false;
+            HAL_FLASH_Lock();
+            status = HAL_ERROR;
+        }
         if (status != HAL_OK) {
         	firmware_write_busy = false;
             return status;
@@ -1079,17 +967,17 @@ uint32_t get_flash_sector(uint32_t address) {
     uint32_t sector;
 
     // STM32F407VG flash sectors
-    if (address <= 0x08004000) sector = FLASH_SECTOR_0;
-    else if (address <= 0x08008000) sector = FLASH_SECTOR_1;
-    else if (address <= 0x0800C000) sector = FLASH_SECTOR_2;
-    else if (address <= 0x08010000) sector = FLASH_SECTOR_3;
-    else if (address <= 0x08020000) sector = FLASH_SECTOR_4;
-    else if (address <= 0x08040000) sector = FLASH_SECTOR_5;
-    else if (address <= 0x08060000) sector = FLASH_SECTOR_6;
-    else if (address <= 0x08080000) sector = FLASH_SECTOR_7;
-    else if (address <= 0x080A0000) sector = FLASH_SECTOR_8;
-    else if (address <= 0x080C0000) sector = FLASH_SECTOR_9;
-    else if (address <= 0x080E0000) sector = FLASH_SECTOR_10;
+    if (address < 0x08004000) sector = FLASH_SECTOR_0;
+    else if (address < 0x08008000) sector = FLASH_SECTOR_1;
+    else if (address < 0x0800C000) sector = FLASH_SECTOR_2;
+    else if (address < 0x08010000) sector = FLASH_SECTOR_3;
+    else if (address < 0x08020000) sector = FLASH_SECTOR_4;
+    else if (address < 0x08040000) sector = FLASH_SECTOR_5;
+    else if (address < 0x08060000) sector = FLASH_SECTOR_6;
+    else if (address < 0x08080000) sector = FLASH_SECTOR_7;
+    else if (address < 0x080A0000) sector = FLASH_SECTOR_8;
+    else if (address < 0x080C0000) sector = FLASH_SECTOR_9;
+    else if (address < 0x080E0000) sector = FLASH_SECTOR_10;
     else sector = FLASH_SECTOR_11;  // covers up to 0x08100000
 
     return sector;
@@ -1109,5 +997,16 @@ uint8_t* find_end_marker_position(uint8_t *buffer, uint32_t size) {
     return NULL; // END_MARKER not found in the buffer
 }
 
+bool check_for_uart_error() {
+    // Check if the UART buffer contains the error message
+    // Return true if found, otherwise return false
+    // ... (this depends on how you handle your UART data)
+    if (strstr((char *)uart_buffer.data, "\r\n+CME ERROR: http socket read error\r\n") != NULL){
+    	return true;
+    }
+    else {
+    	return false;
+    }
+}
 
 
