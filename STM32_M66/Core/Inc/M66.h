@@ -23,6 +23,7 @@ extern UART_HandleTypeDef huart2;
 #define APP_START_ADDR          0x8040000  // Start address of the app section
 #define TEMP_START_ADDR         0x80C0000  // Start address of the temp section
 #define TEMP_SECTION_SIZE       0x40000     // Size of the temp section (396KB)
+#define CONFIG_END_ADDR			CONFIG_START_ADDR + 0x10000
 
 #define MAX_URL_LENGTH 256
 extern char firmware_url[MAX_URL_LENGTH];

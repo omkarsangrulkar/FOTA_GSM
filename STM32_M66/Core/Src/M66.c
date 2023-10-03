@@ -642,13 +642,23 @@ bool write_firmware_to_flash(uint8_t* firmware_data, uint32_t firmware_length) {
 }
 
 bool set_update_flag(void) {
-    if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, CONFIG_START_ADDR, UPDATE_FLAG_VALUE) != HAL_OK) {
-        // Handle flash programming error
-        HAL_FLASH_Lock(); // Lock the flash memory before returning
+
+    // Assuming you have a function to erase the necessary flash sector.
+    // You should implement this if you don't have it.
+    if (HAL_OK != erase_flash(CONFIG_START_ADDR, CONFIG_END_ADDR)) {
+        // Handle error: Erasing flash failed
+
+    }
+    uint32_t updateFlag = UPDATE_FLAG_VALUE;
+
+    if (HAL_OK != write_to_flash(CONFIG_START_ADDR, (uint8_t *)&updateFlag, 4)) {
         return false;
     }
+
+
     return true;
 }
+
 
 
 void firmware_update_handler(void)
@@ -683,7 +693,7 @@ void firmware_update_handler(void)
         case WRITE_PENDING:
             if (!firmware_write_busy) {
                 firmware_write_busy = true;
-                if (!set_update_flag()) {
+                if (set_update_flag()) {
                 	HAL_FLASH_Lock();
                     fwUpdateState = RESET_PENDING;
                     firmware_write_busy = false;
@@ -695,6 +705,7 @@ void firmware_update_handler(void)
             break;
 
         case RESET_PENDING:
+            send_at_command("AT+QMTDISC=0", "+QMTDISC: 0,0");
             NVIC_SystemReset();
             break;
 
