@@ -1,4 +1,7 @@
-import binascii
+import sys
+import os
+
+CRC_POLYNOMIAL = 0xEDB88320
 
 def calculate_crc32(data):
     crc = 0xFFFFFFFF
@@ -8,34 +11,42 @@ def calculate_crc32(data):
 
         for _ in range(8):
             if crc & 0x00000001:
-                crc = (crc >> 1) ^ 0xEDB88320
+                crc = (crc >> 1) ^ CRC_POLYNOMIAL
             else:
                 crc = crc >> 1
 
-    return crc & 0xFFFFFFFF
+    return ~crc & 0xFFFFFFFF
 
-def create_file_with_crc32(input_file_path, output_file_path):
+def verify_firmware_update(filename):
     try:
-        # Read the binary file
-        with open(input_file_path, 'rb') as input_file:
-            binary_data = input_file.read()
+        with open(filename, 'rb') as f:
+            content = f.read()
+            
+            if len(content) % 4 != 0:
+                print("Error: The file size is not a multiple of 4 bytes.")
+                return False
 
-        # Calculate CRC32 checksum
-        crc = calculate_crc32(binary_data)
+            # Calculate the CRC32 for the entire content including the appended CRC
+            calculated_crc = calculate_crc32(content)
 
-        # Convert CRC32 to bytes (4 bytes, little-endian)
-        crc_bytes = crc.to_bytes(4, byteorder='little')
-
-        # Create a new file with the CRC32 value appended
-        with open(output_file_path, 'wb') as output_file:
-            output_file.write(binary_data)
-            output_file.write(crc_bytes)
-
-        print("CRC32 appended to new file:", output_file_path)
+            # Verification: If the entire content's CRC is 0xFFFFFFFF, the verification is successful
+            if calculated_crc == 0xFFFFFFFF:
+                print(f"Verification Successful for {filename}")
+                return True
+            else:
+                print(f"Verification Failed for {filename}")
+                return False
+    except FileNotFoundError:
+        print(f"Error: {filename} not found.")
+        return False
     except Exception as e:
-        print("Error:", str(e))
+        print(f"Unexpected error: {e}")
+        return False
 
 if __name__ == "__main__":
-    input_file_path = "E:\STM_M66\STM32_M66\Debug\STM32_M66.bin"  # Replace with the path to your binary file
-    output_file_path = "E:\STM_M66\FOTA_CRC\ApplicationCRC.bin"  # Replace with the desired output file path
-    create_file_with_crc32(input_file_path, output_file_path)
+    if len(sys.argv) < 2:
+        print("Usage: python verifier.py <path_to_file_with_crc>")
+        sys.exit(1)
+
+    filename = sys.argv[1]
+    verify_firmware_update(filename)

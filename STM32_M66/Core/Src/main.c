@@ -74,6 +74,18 @@ void modem_setup(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void LED_Init(void) {
+    // Enable the GPIOD clock
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIODEN;
+
+    // Initialize PD12 as an output
+    GPIOD->MODER &= ~GPIO_MODER_MODER12;   // Clear the mode bits for PD12
+    GPIOD->MODER |= GPIO_MODER_MODER12_0;  // Set PD12 as output
+}
+
+void LED_Toggle(void) {
+    GPIOD->ODR ^= GPIO_ODR_OD12;  // Toggle the output on PD12
+}
 
 
 
@@ -86,7 +98,8 @@ void modem_setup(void);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-
+  // Set the VTOR to the application's start address
+  SCB->VTOR = APP_START_ADDR;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -95,7 +108,7 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-
+  LED_Init();
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -129,7 +142,11 @@ int main(void)
     /* USER CODE BEGIN 3 */
 
     firmware_update_handler();
+//     Toggle the LED
+    LED_Toggle();
 
+    // Simple delay
+    HAL_Delay(1000);
 
   /* USER CODE END 3 */
   }
