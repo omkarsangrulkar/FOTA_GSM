@@ -1,0 +1,10 @@
+../Core/Src/bootloader.c:43:6:error_handler	1
+../Core/Src/bootloader.c:64:6:bootloader_function	6
+../Core/Src/bootloader.c:106:6:update_application	3
+../Core/Src/bootloader.c:129:6:is_firmware_valid	2
+../Core/Src/bootloader.c:147:6:jump_to_application	1
+../Core/Src/bootloader.c:181:10:calculate_crc32	4
+../Core/Src/bootloader.c:199:10:get_flash_sector	12
+../Core/Src/bootloader.c:219:19:erase_flash	4
+../Core/Src/bootloader.c:253:19:transfer_flash_data	5
+../Core/Src/bootloader.c:290:6:is_timeout_expired	1

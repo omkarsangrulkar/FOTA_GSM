@@ -1,12 +1,4 @@
-../Core/Src/main.c:83:6:jump_to_application	1
-../Core/Src/main.c:119:10:calculate_crc32	4
-../Core/Src/main.c:136:10:get_flash_sector	12
-../Core/Src/main.c:156:19:erase_flash	4
-../Core/Src/main.c:190:19:transfer_flash_data	5
-../Core/Src/main.c:227:6:is_timeout_expired	1
-../Core/Src/main.c:233:6:update_application	4
-../Core/Src/main.c:257:6:bootloader_function	3
-../Core/Src/main.c:295:5:bl_main	1
-../Core/Src/main.c:339:6:SystemClock_Config	3
-../Core/Src/main.c:386:13:MX_GPIO_Init	1
-../Core/Src/main.c:531:6:Error_Handler	1
+../Core/Src/main.c:70:5:bl_main	1
+../Core/Src/main.c:114:6:SystemClock_Config	3
+../Core/Src/main.c:161:13:MX_GPIO_Init	1
+../Core/Src/main.c:306:6:Error_Handler	1

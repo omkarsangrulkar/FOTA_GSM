@@ -28,9 +28,6 @@ char firmware_url[MAX_URL_LENGTH] = {0};
 uint8_t mqtt_buffer[MQTT_BUFFER_SIZE];
 size_t mqtt_buffer_idx = 0;
 
-// Firmware buffer
-uint8_t firmware_buffer[MAX_FIRMWARE_SIZE];
-//size_t firmware_size = 0;
 
 volatile bool data_received_flag = false;
 
@@ -71,9 +68,9 @@ uint8_t *active_buffer = &receive_double_buffer[0];
 uint8_t *write_buffer = &receive_double_buffer[BUFFER_SIZE];
 
 uint8_t receive_buffer[BUFFER_SIZE];
-uint32_t firmware_size = 0;
 uint32_t buffer_index = 0;
 volatile uint32_t current_flash_address = START_FLASH_ADDRESS;
+uint32_t firmware_length_with_crc = 0;
 
 
 void Delay(uint32_t milliseconds) {
@@ -90,17 +87,6 @@ void Delay(uint32_t milliseconds) {
 }
 void Initialize_Modem(void)
 {
-//    at_state = AT_IDLE; // Make sure the state machine is at its initial state
-//
-//    // Send the initial AT command and check its response
-//    send_at_command("AT\r\n", "OK");
-//    while (check_at_command_response(1000) == AT_WAITING_RESPONSE);
-//
-//    if(at_state != AT_RESPONSE_RECEIVED)
-//    {
-//        return; // If we didn't get an OK, exit
-//    }
-
     // Reset state
     at_state = AT_IDLE;
 
@@ -328,7 +314,7 @@ uint32_t receive_data(uint8_t* buffer, uint32_t buffer_size) {
     uint32_t bytes_read = 0;
     uint32_t last_data_time = HAL_GetTick(); // Initialize with current tick
 
-//    DISABLE_UART_INTERRUPT();
+//    DISABLE_UART_INTERRUPT(); If any other uart is used also add handlers of that uart
 
     while (bytes_read < buffer_size) {
         if (uart_buffer.read_index != uart_buffer.write_index) {
@@ -454,13 +440,6 @@ bool download_firmware(const char* firmware_url) {
             HAL_Delay(DELAY);
             firmware_download_busy = false;
             current_state = INITIATE_HTTP_GET;
-//            if (check_at_command_response(DELAY) == AT_RESPONSE_RECEIVED) {
-//                current_state = INITIATE_HTTP_GET;
-//                firmware_download_busy = false;
-//            } else if (check_at_command_response(LONG_DELAY) == AT_RESPONSE_TIMEOUT) {
-//                current_state = DOWNLOAD_ERROR;
-////                firmware_download_busy = false;
-//            }
             break;
 
         case INITIATE_HTTP_GET:
@@ -481,13 +460,6 @@ bool download_firmware(const char* firmware_url) {
             	current_state = RECEIVE_HTTP_RESPONSE;
             	firmware_download_busy = false;
             }
-//            if (check_at_command_response(DELAY) == AT_RESPONSE_RECEIVED) {
-//                current_state = RECEIVE_HTTP_RESPONSE;
-//                firmware_download_busy = false;
-//            } else if (check_at_command_response(LONG_DELAY) == AT_RESPONSE_TIMEOUT) {
-//                current_state = DOWNLOAD_ERROR;
-////                firmware_download_busy = false;
-//            }
             break;
 
 
@@ -517,35 +489,12 @@ bool download_firmware(const char* firmware_url) {
     return result;
 }
 
-// Verify firmware update with CRC
-//bool verify_firmware_update() {
-//    // Calculate the starting address of the firmware in flash
-//    uint8_t* firmware_data = (uint8_t*) START_FLASH_ADDRESS;
-//
-//    // Calculate the length of the firmware data by excluding the CRC
-//    uint32_t firmware_length = current_flash_address - START_FLASH_ADDRESS - sizeof(uint32_t);
-//
-//    // Ensure that the firmware length is valid
-//    if (!is_firmware_size_valid(firmware_length)) {
-//        return false;  // Firmware data length is invalid
-//    }
-//
-//    // Address where the appended CRC is stored
-//    uint32_t* stored_crc_ptr = (uint32_t*)(START_FLASH_ADDRESS + firmware_length);
-//
-//    // Calculate CRC for the stored firmware data
-//    uint32_t calculated_crc = calculate_crc32(firmware_data, firmware_length);
-//
-//    // Compare the stored and calculated CRC values
-//    return (*stored_crc_ptr == calculated_crc);
-//}
-//
 bool verify_firmware_update() {
     // Calculate the starting address of the firmware in flash
     uint8_t* firmware_data = (uint8_t*) START_FLASH_ADDRESS;
 
     // Calculate the length of the firmware data including the appended CRC
-    uint32_t firmware_length_with_crc = current_flash_address - START_FLASH_ADDRESS;
+    firmware_length_with_crc = current_flash_address - START_FLASH_ADDRESS;
 
     // Ensure that the firmware length is valid (this should also account for the CRC32 size)
     if (!is_firmware_size_valid(firmware_length_with_crc)) {
@@ -589,58 +538,6 @@ uint32_t calculate_crc32(uint8_t *data, uint32_t size) {
     return crc;
 }
 
-bool write_firmware_to_flash(uint8_t* firmware_data, uint32_t firmware_length) {
-    // Erase the entire TEMP sector
-    HAL_StatusTypeDef status = HAL_FLASH_Unlock();
-    if (status != HAL_OK) {
-        // Handle flash unlock error
-    	firmware_write_busy = false;
-        return false;
-    }
-
-    FLASH_EraseInitTypeDef erase_info;
-    erase_info.TypeErase = FLASH_TYPEERASE_SECTORS;
-    erase_info.Sector = FLASH_SECTOR_10; // TEMP sector on STM32F4
-    erase_info.NbSectors = 2;
-    erase_info.VoltageRange = FLASH_VOLTAGE_RANGE_3; // Adjust voltage range as needed
-
-    uint32_t error_sector;
-    status = HAL_FLASHEx_Erase(&erase_info, &error_sector);
-    if (status != HAL_OK) {
-        // Handle flash erase error
-        HAL_FLASH_Lock(); // Lock the flash memory before returning
-        firmware_write_busy = false;
-        return false;
-    }
-
-    // Program the firmware data into flash memory
-    uint32_t* flash_address = (uint32_t*)TEMP_START_ADDR;
-    uint32_t* firmware_data_ptr = (uint32_t*)firmware_data;
-
-    for (size_t i = 0; i < firmware_length; i += 4) {
-        if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, (uint32_t)flash_address, *firmware_data_ptr) != HAL_OK) {
-            // Handle flash programming error
-            HAL_FLASH_Lock(); // Lock the flash memory before returning
-            firmware_write_busy = false;
-            return false;
-        }
-        flash_address++;
-        firmware_data_ptr++;
-    }
-
-    // Set the CONFIG flag after successfully writing firmware
-    if (!set_update_flag()) {
-        HAL_FLASH_Lock();
-        firmware_write_busy = false;
-        return false;
-    }
-
-    // Lock the flash memory after programming
-    HAL_FLASH_Lock();
-    firmware_write_busy = false;
-    return true; // Return true to indicate success
-}
-
 bool set_update_flag(void) {
 
     // Assuming you have a function to erase the necessary flash sector.
@@ -650,8 +547,13 @@ bool set_update_flag(void) {
 
     }
     uint32_t updateFlag = UPDATE_FLAG_VALUE;
+    uint32_t firmwareSize = firmware_length_with_crc;
 
     if (HAL_OK != write_to_flash(CONFIG_START_ADDR, (uint8_t *)&updateFlag, 4)) {
+        return false;
+    }
+
+    if (HAL_OK != write_to_flash(FIRMWARE_SIZE_ADDR, (uint8_t *)&firmwareSize, 4)) {
         return false;
     }
 
@@ -768,45 +670,6 @@ bool firmware_update_process() {
             }
 
             if (find_end_marker(active_buffer, buffer_index)) {
-//            	uint8_t *end_marker_pos = find_end_marker_position(active_buffer, buffer_index);
-//                if (first_marker_skipped) {
-//                    end_marker_found = true;
-//                    buffer_index = (uint32_t)(find_end_marker_position(active_buffer, buffer_index) - active_buffer) + strlen(END_MARKER);
-//                    // Switch buffers immediately
-//                    uint8_t *temp = active_buffer;
-//                    active_buffer = write_buffer;
-//                    write_buffer = temp;
-//
-//                    // Write data to flash
-//                    uint32_t residue = buffer_index % 4;
-//                    uint32_t write_size = buffer_index - residue;
-//                    if (HAL_OK != write_to_flash(current_flash_address, write_buffer, write_size)) {
-//                        return false;
-//                    }
-//                    current_flash_address += write_size;
-//                    buffer_index = residue;
-//
-//                    break;
-//
-//                } else {
-//                    first_marker_skipped = true; // Skip this occurrence and continue processing
-//                    // Switch buffers immediately
-//                    uint8_t *temp = active_buffer;
-//                    active_buffer = write_buffer;
-//                    write_buffer = temp;
-//
-//                    // Write data to flash
-//                    uint32_t residue = buffer_index % 4;
-//                    uint32_t write_size = buffer_index - residue;
-//                    if (HAL_OK != write_to_flash(current_flash_address, write_buffer, write_size)) {
-//                        return false;
-//                    }
-//                    current_flash_address += write_size;
-//                    buffer_index = residue;
-//
-//                    break;
-//
-//                }
                 if (first_marker_skipped){
                 	end_marker_found = true;
                 	buffer_index = (uint32_t)(find_end_marker_position(active_buffer, buffer_index) - active_buffer);
@@ -829,29 +692,11 @@ bool firmware_update_process() {
 
                 }else{
                 	first_marker_skipped = true;
-//                    buffer_index = (uint32_t)(find_end_marker_position(active_buffer, buffer_index) - active_buffer) + strlen(END_MARKER);
-//                    // Switch buffers immediately
-//                    uint8_t *temp = active_buffer;
-//                    active_buffer = write_buffer;
-//                    write_buffer = temp;
-//
-//                    // Write data to flash
-//                    uint32_t residue = buffer_index % 4;
-//                    uint32_t write_size = buffer_index - residue;
-//                    if (HAL_OK != write_to_flash(current_flash_address, write_buffer, write_size)) {
-//                        return false;
-//                    }
-//                    current_flash_address += write_size;
-//                    buffer_index = residue;
                 }
 
 
                 break;
 
-
-//                end_marker_found = true;
-                // Adjust buffer_index to just after the end marker:
-//                buffer_index = (uint32_t)(find_end_marker_position(active_buffer, buffer_index) - active_buffer) + strlen(END_MARKER);
             }
 
         }

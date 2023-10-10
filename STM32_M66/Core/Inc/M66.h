@@ -24,6 +24,7 @@ extern UART_HandleTypeDef huart2;
 #define TEMP_START_ADDR         0x80C0000  // Start address of the temp section
 #define TEMP_SECTION_SIZE       0x40000     // Size of the temp section (396KB)
 #define CONFIG_END_ADDR			CONFIG_START_ADDR + 0x10000
+#define FIRMWARE_SIZE_ADDR		0x8020004
 
 #define MAX_URL_LENGTH 256
 extern char firmware_url[MAX_URL_LENGTH];
@@ -40,9 +41,6 @@ extern uint8_t receive_buffer[]; // Change type and size if needed
 
 
 #define MAX_FIRMWARE_SIZE 51200 // Adjust as needed
-// Firmware buffer
-extern uint8_t firmware_buffer[MAX_FIRMWARE_SIZE];
-extern uint32_t firmware_size;
 
 #define CRC_POLYNOMIAL         0x04C11DB7  // CRC32 polynomial
 
@@ -51,7 +49,6 @@ extern uint32_t firmware_size;
 
 uint32_t receive_data(uint8_t* buffer, uint32_t buffer_size);
 uint32_t calculate_crc32(uint8_t* data, uint32_t size);
-bool write_firmware_to_flash(uint8_t* firmware_data, uint32_t firmware_length);
 bool verify_firmware_update();
 bool download_firmware(const char* firmware_url);
 void handle_mqtt_message(const char* message);

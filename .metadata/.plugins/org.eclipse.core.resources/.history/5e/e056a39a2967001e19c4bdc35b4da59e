@@ -1,0 +1,883 @@
+/*
+ * M66.c
+ *
+ *  Created on: Aug 30, 2023
+ *      Author: atiqueshaikh
+ */
+
+#include "M66.h"
+#include "stm32f4xx_hal.h"
+#include "main.h"
+#include <string.h>
+#include <stdio.h>
+#include "stdbool.h"
+#include "stm32f4xx_hal_uart.h"
+#include "cJSON.h"
+#include <stdint.h>
+#include "stm32f4xx_hal_flash.h"
+#include "at_commands.h"
+#include <stddef.h>
+
+char APN[] = "airtelgprs.com";
+const uint32_t SHORT_DELAY = 1000;   // in milliseconds
+const uint32_t DELAY = 5000;  // in milliseconds
+const uint32_t LONG_DELAY = 20000;  // in milliseconds
+
+char firmware_url[MAX_URL_LENGTH] = {0};
+
+uint8_t mqtt_buffer[MQTT_BUFFER_SIZE];
+size_t mqtt_buffer_idx = 0;
+
+// Firmware buffer
+uint8_t firmware_buffer[MAX_FIRMWARE_SIZE];
+//size_t firmware_size = 0;
+
+volatile bool data_received_flag = false;
+
+uint8_t received_byte; // Temporary storage for received byte
+//uint8_t receive_buffer[256]; // Circular buffer for received data
+size_t buffer_idx = 0; // Current index in buffer
+bool firmware_download_complete = false;
+bool firmware_download_busy = false;
+bool firmware_verify_busy = false;
+bool firmware_write_busy = false;
+bool read_request = false;
+
+
+#define UPDATE_FLAG_VALUE 0xDEADBEEF // Arbitrary value to indicate a firmware update is present
+
+UART_BufferTypeDef uart_buffer;
+UART_Mode current_mode = MODE_DEFAULT;
+
+unsigned int retry_count = 0;
+const uint8_t MAX_RETRIES = 5;
+
+//enum FwUpdateState fwUpdateState;
+enum FwUpdateState fwUpdateState = IDLE;
+
+download_state_t current_state = INIT_HTTP;
+
+#define UART_TIMEOUT 30000
+#define BUFFER_SIZE 4096
+#define END_MARKER "\r\nOK\r\n"
+#define START_FLASH_ADDRESS 0x80C0000
+#define END_FLASH_ADDRESS (START_FLASH_ADDRESS + 0x40000)
+#define UART_INSTANCE  huart2
+#define DISABLE_UART_INTERRUPT()		__HAL_UART_DISABLE_IT(&UART_INSTANCE, UART_IT_RXNE);
+#define ENABLE_UART_INTERRUPT()			__HAL_UART_ENABLE_IT(&UART_INSTANCE, UART_IT_RXNE);
+#define DOUBLE_BUFFER_SIZE (BUFFER_SIZE * 2)
+uint8_t receive_double_buffer[DOUBLE_BUFFER_SIZE];
+uint8_t *active_buffer = &receive_double_buffer[0];
+uint8_t *write_buffer = &receive_double_buffer[BUFFER_SIZE];
+
+uint8_t receive_buffer[BUFFER_SIZE];
+uint32_t firmware_size = 0;
+uint32_t buffer_index = 0;
+volatile uint32_t current_flash_address = START_FLASH_ADDRESS;
+uint32_t firmware_length_with_crc = 0;
+
+
+void Delay(uint32_t milliseconds) {
+    // Calculate the number of clock cycles required for the desired delay
+    // The actual calculation may vary depending on your microcontroller and clock settings
+    uint32_t delay_cycles = milliseconds * (SystemCoreClock / 1000) / 1000;
+
+    // Perform the delay using a simple loop
+    for (uint32_t i = 0; i < delay_cycles; i++) {
+        // This loop will take some time to execute, creating a delay
+        // The exact duration of the delay depends on your microcontroller's clock frequency
+        // Adjust the loop count or use a hardware timer for more precise delays
+    }
+}
+void Initialize_Modem(void)
+{
+//    at_state = AT_IDLE; // Make sure the state machine is at its initial state
+//
+//    // Send the initial AT command and check its response
+//    send_at_command("AT\r\n", "OK");
+//    while (check_at_command_response(1000) == AT_WAITING_RESPONSE);
+//
+//    if(at_state != AT_RESPONSE_RECEIVED)
+//    {
+//        return; // If we didn't get an OK, exit
+//    }
+
+    // Reset state
+    at_state = AT_IDLE;
+
+    // Proceed with other commands using the same pattern
+    send_at_command("ATE0", "OK");
+    while (check_at_command_response(SHORT_DELAY) == AT_WAITING_RESPONSE);
+    if(at_state != AT_RESPONSE_RECEIVED)
+    {
+        return;
+    }
+
+
+
+    send_at_command("AT+CPIN?", "+CPIN: READY");
+    while (check_at_command_response(SHORT_DELAY) == AT_WAITING_RESPONSE);
+    if(at_state != AT_RESPONSE_RECEIVED)
+    {
+        return;
+    }
+
+
+
+     send_at_command("AT+CREG?", "+CREG: 0,1");
+     while (check_at_command_response(SHORT_DELAY) == AT_WAITING_RESPONSE);
+     if(at_state != AT_RESPONSE_RECEIVED)
+     {
+         return;
+     }
+     HAL_Delay(SHORT_DELAY);
+
+
+      send_at_command("AT+QICSGP=1,\"airtelgprs.com\"", "OK");
+      while (check_at_command_response(SHORT_DELAY) == AT_WAITING_RESPONSE);
+      if(at_state != AT_RESPONSE_RECEIVED)
+      {
+          return;
+      }
+
+
+
+       send_at_command("AT+QICSGP?", "+QICSGP: 1");
+       while (check_at_command_response(SHORT_DELAY) == AT_WAITING_RESPONSE);
+       if(at_state != AT_RESPONSE_RECEIVED)
+       {
+           return;
+       }
+
+       HAL_Delay(SHORT_DELAY);
+
+        send_at_command("AT+QIREGAPP", "OK");
+        while (check_at_command_response(SHORT_DELAY) == AT_WAITING_RESPONSE);
+        if(at_state != AT_RESPONSE_RECEIVED)
+        {
+            return;
+        }
+        HAL_Delay(SHORT_DELAY);
+
+
+         send_at_command("AT+QIACT", "OK");
+         while (check_at_command_response(SHORT_DELAY) == AT_WAITING_RESPONSE);
+         if(at_state != AT_RESPONSE_RECEIVED)
+         {
+             return;
+         }
+         HAL_Delay(SHORT_DELAY);
+
+//         HAL_UART_Transmit(&huart2, (uint8_t *)"AT+QILOCIP\r\n", strlen("AT+QILOCIP\r\n"), 1000);
+         UART_Send("AT+QILOCIP\r\n");
+         Delay(SHORT_DELAY);
+
+
+
+
+}
+
+
+void SSL_Config(void){
+#ifdef SSLCONFIG
+	char CA_CERT[] =  "-----BEGIN CERTIFICATE-----\n\
+MIIDQTCCAimgAwIBAgITBmyfz5m/jAo54vB4ikPmljZbyjANBgkqhkiG9w0BAQsF\n\
+ADA5MQswCQYDVQQGEwJVUzEPMA0GA1UEChMGQW1hem9uMRkwFwYDVQQDExBBbWF6\n\
+b24gUm9vdCBDQSAxMB4XDTE1MDUyNjAwMDAwMFoXDTM4MDExNzAwMDAwMFowOTEL\n\
+MAkGA1UEBhMCVVMxDzANBgNVBAoTBkFtYXpvbjEZMBcGA1UEAxMQQW1hem9uIFJv\n\
+b3QgQ0EgMTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALJ4gHHKeNXj\n\
+ca9HgFB0fW7Y14h29Jlo91ghYPl0hAEvrAIthtOgQ3pOsqTQNroBvo3bSMgHFzZM\n\
+9O6II8c+6zf1tRn4SWiw3te5djgdYZ6k/oI2peVKVuRF4fn9tBb6dNqcmzU5L/qw\n\
+IFAGbHrQgLKm+a/sRxmPUDgH3KKHOVj4utWp+UhnMJbulHheb4mjUcAwhmahRWa6\n\
+VOujw5H5SNz/0egwLX0tdHA114gk957EWW67c4cX8jJGKLhD+rcdqsq08p8kDi1L\n\
+93FcXmn/6pUCyziKrlA4b9v7LWIbxcceVOF34GfID5yHI9Y/QCB/IIDEgEw+OyQm\n\
+jgSubJrIqg0CAwEAAaNCMEAwDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMC\n\
+AYYwHQYDVR0OBBYEFIQYzIU07LwMlJQuCFmcx7IQTgoIMA0GCSqGSIb3DQEBCwUA\n\
+A4IBAQCY8jdaQZChGsV2USggNiMOruYou6r4lK5IpDB/G/wkjUu0yKGX9rbxenDI\n\
+U5PMCCjjmCXPI6T53iHTfIUJrU6adTrCC2qJeHZERxhlbI1Bjjt/msv0tadQ1wUs\n\
+N+gDS63pYaACbvXy8MWy7Vu33PqUXHeeE6V/Uq2V8viTO96LXFvKWlJbYK8U90vv\n\
+o/ufQJVtMVT8QtPHRh8jrdkPSHCa2XV4cdFyQzR1bldZwgJcJmApzyMZFo6IQ6XU\n\
+5MsI+yMRQ+hDKXJioaldXgjUkK642M4UwtBV8ob2xJNDd2ZhwLnoQdeXeGADbkpy\n\
+rqXRfboQnoZsG4q5WTP468SQvvG5\n\
+-----END CERTIFICATE-----\r\n";
+
+	char Cli_CERT[] = "-----BEGIN CERTIFICATE-----\n\
+MIIDWjCCAkKgAwIBAgIVAJucOsrmj0GkIimc5ToFo/rcZCIjMA0GCSqGSIb3DQEB\n\
+CwUAME0xSzBJBgNVBAsMQkFtYXpvbiBXZWIgU2VydmljZXMgTz1BbWF6b24uY29t\n\
+IEluYy4gTD1TZWF0dGxlIFNUPVdhc2hpbmd0b24gQz1VUzAeFw0yMzA4MjkwODM1\n\
+MzlaFw00OTEyMzEyMzU5NTlaMB4xHDAaBgNVBAMME0FXUyBJb1QgQ2VydGlmaWNh\n\
+dGUwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDHgFxLbb8kBihIeEUP\n\
+p/AKYeyHtFq7NPtpVDRA/5GfybsOaASPFjeE/sVr/II4+XMAQCdOxnlJ1gdtEkjX\n\
+j8n0nuNvIfX74QXX5UYVKRjHXuS7sktr5D0pRDcCBg1agPSZp/ohTD3Nr499Yc3b\n\
+SdLFA6LFGjFjdNS8EAFQMpp87IEoRXAcV764xklFpw8vOvQS8X85QU+ApTTPIp/F\n\
+dpNrpqz+UxO8ydO/edqXXEYdmlJhvHzmIfVevGjwvDJv3N8QKCPhmnIS/Co5leX+\n\
+aPDHPx1BCdD1FaKeMErWzecpp1DCjn1PJbp+u3e2vY+72Ym9+Uj29erjkt8U3ifV\n\
+0A0JAgMBAAGjYDBeMB8GA1UdIwQYMBaAFPmq0BI0G6csZf8a8H1JiCUZHtGsMB0G\n\
+A1UdDgQWBBRIa9gnMDfGriZtNZZD0TjjdsLt8TAMBgNVHRMBAf8EAjAAMA4GA1Ud\n\
+DwEB/wQEAwIHgDANBgkqhkiG9w0BAQsFAAOCAQEAmrUdSd5X3uvcdHHWQch3VOUw\n\
+MX7D4FW8cjJwJvi1i4rayeQlHAD1m1qiGx1V8KZuGCEK+xdyOaQwC0On03AQUItc\n\
+AgNpCFFEbI8gIgEv084JoOUzABglBKFknlzPmadtOD4P8YIM80fvhvG4GWLnvuFa\n\
+XVQPXmgLOxe4B1fk7aizrRpUV3aR/MauHhikpQHHUdZnuYaMpMCqJBpVQnAmLBsf\n\
+BBavcWnfdVUWWmGSHgzaQ7WGznq9upcNEuGkwZkCZoQOV128+xf1m5S2JNhXrLHf\n\
+L3is0Hy/KLSr2jOsgz5qKalAN1JTX1K6WGfRoEHRwT6juhZizkyrkrer87kr5A==\n\
+-----END CERTIFICATE-----\r\n";
+
+	char Usr_KEY[] = "-----BEGIN RSA PRIVATE KEY-----\n\
+MIIEpQIBAAKCAQEAx4BcS22/JAYoSHhFD6fwCmHsh7RauzT7aVQ0QP+Rn8m7DmgE\n\
+jxY3hP7Fa/yCOPlzAEAnTsZ5SdYHbRJI14/J9J7jbyH1++EF1+VGFSkYx17ku7JL\n\
+a+Q9KUQ3AgYNWoD0maf6IUw9za+PfWHN20nSxQOixRoxY3TUvBABUDKafOyBKEVw\n\
+HFe+uMZJRacPLzr0EvF/OUFPgKU0zyKfxXaTa6as/lMTvMnTv3nal1xGHZpSYbx8\n\
+5iH1Xrxo8Lwyb9zfECgj4ZpyEvwqOZXl/mjwxz8dQQnQ9RWinjBK1s3nKadQwo59\n\
+TyW6frt3tr2Pu9mJvflI9vXq45LfFN4n1dANCQIDAQABAoIBAQCBIkgblvUzZzzp\n\
+89eYE7dfsRT+njJgnSHjgtqz+/mR+W04HQJecB4N2y+E/5R3NphG4D/RUM0viveR\n\
+lVVLGsq5qaNDyzLDEFvM7J5Zkhl066qZCAaj1r/0FzCYAbzhCTnKwB07MnOK0QnL\n\
+OeSa/gUM+5Z/iL3RR81v0dhXxfmTxAohKrgtkXeP4oxIGVwJKpqBTEsBwOCTLbyT\n\
+UlUO1LkWct7ysD4qfk6QmGLNTNY91Nwzaveg56eiHwwmQq82MRwNiB4BB0FrFhM8\n\
+pXNvAuJiHW9eOeXU+qEa8rWEIiL8vJu1z95laaasvjNsUAgjI3NOqxXMwtrakOpY\n\
+SfkFDNalAoGBAOJ1BXJKrbFkxcRcMMiETHCF9zgCFseqTEGNehbYlomjQSNRneuX\n\
+B+r88ABC8crL+mdxZZv5pNQ6uZ+DCxTd8e1FBRyfDQ3PvH/PH8/GAB4h8AY0gqIE\n\
+uh7Z18uD2pI4DWXKTUKquDsvRTzU5mcNN4+WMrQ8bFChFNQZuj+J8Y6HAoGBAOGH\n\
+GcV2/QFBqvUhVXhosMGZvgslNRn8iJDcDUbR1z7/BHLJmdH/PahKkvT2hgPWwbGq\n\
+2rH/lL179Qm9KhjmXCq9UoAffSZCd5yj5VY9fSInTfVoQrmOynsrhduVjVTwQHx6\n\
+HnrQaJ7mYSllfFhnZqvICcHHavE99i7kfvhJzlvvAoGBAKe/7cfrH91ve7xoWk6/\n\
+Cey0oBwiGAPR1+kbRxxTVrggceka1XOmDlx4/8QB0yDZluU3sAApnnsEAWry5KuR\n\
+eVu8q/u2qjHX95dps/PyhTXNCANgtIAWJlUiI+ODCc8UrIABqte+pPhanNxiDUa7\n\
+GLRJm8e9lrLnkAlKAZh9s61TAoGAOoH8E5hc5riMi2+MZuJyCKfD/8w1THqRS1Nr\n\
+NlY2CyfJlaXre+lFq6U9HsPd3J0YPuleNxNhGQ9RcKdchn0sqAHZp1eD9isEMOTs\n\
+GEV3cybTOLlFpjH/IZkW7vKLad+yOxjLU31BxwdpaX3klmKs5h/NODJt8gvrFBs/\n\
+PVaYbI0CgYEAkKdmKs/OinXgg+OZZKRP9NDdcAC6tU0z+hcJro5XvgPZyaPLHPZV\n\
+EiBeaDGu2GFxU3xMC4Pco1+qoetbHse8Sw5FF4dgWLoPvax2694XQG2nPk4kZ1go\n\
+FSFcEE0C9x2LB5Busc2qSAEaxuZOmQ4NJZX40Sh/23Bx5j/uR4nP9eY=\n\
+-----END RSA PRIVATE KEY-----\r\n";
+#endif
+
+	HAL_UART_Transmit(&huart2, (uint8_t *)"AT+QMTCFG=\"SSL\",0,1,2\r\n", strlen("AT+QMTCFG=\"SSL\",0,1,2\r\n"), 1000);
+	HAL_Delay(1000);
+#ifdef SSLCONFIG
+	HAL_UART_Transmit(&huart2, (uint8_t *)"AT+QSECWRITE=\"cacert.pem\",1187,100\r\n", strlen("AT+QSECWRITE=\"cacert.pem\",1187,100\r\n"), 1000);
+	HAL_Delay(300);
+	HAL_UART_Transmit(&huart2, (uint8_t *)CA_CERT, strlen(CA_CERT), HAL_MAX_DELAY);
+//	HAL_UART_Transmit(&huart2, (uint8_t *)"\r\n", strlen("\r\n"), HAL_MAX_DELAY);
+	HAL_Delay(3000);
+	HAL_UART_Transmit(&huart2, (uint8_t *)"AT+QSECWRITE=\"client.pem\",1224,100\r\n", strlen("AT+QSECWRITE=\"client.pem\",1224,100\r\n"), 1000);
+	HAL_Delay(300);
+	HAL_UART_Transmit(&huart2, (uint8_t *)Cli_CERT, strlen(Cli_CERT), HAL_MAX_DELAY);
+//	HAL_UART_Transmit(&huart2, (uint8_t *)"\r\n", strlen("\r\n"), HAL_MAX_DELAY);
+	HAL_Delay(300);
+	HAL_UART_Transmit(&huart2, (uint8_t *)"AT+QSECWRITE=\"user_key.pem\",1679,100\r\n", strlen("AT+QSECWRITE=\"user_key.pem\",1679,100\r\n"), 1000);
+	HAL_Delay(300);
+	HAL_UART_Transmit(&huart2, (uint8_t *)Usr_KEY, strlen(Usr_KEY), HAL_MAX_DELAY);
+//	HAL_UART_Transmit(&huart2, (uint8_t *)"\r\n", strlen("\r\n"), HAL_MAX_DELAY);
+#endif
+	HAL_UART_Transmit(&huart2, (uint8_t *)"AT+QSSLCFG=\"cacert\",2,\"cacert.pem\"\r\n", strlen("AT+QSSLCFG=\"cacert\",2,\"cacert.pem\"\r\n"), 1000);
+	HAL_Delay(1000);
+	HAL_UART_Transmit(&huart2, (uint8_t *)"AT+QSSLCFG=\"clientcert\",2,\"client.pem\"\r\n", strlen("AT+QSSLCFG=\"clientcert\",2,\"client.pem\"\r\n"), 1000);
+	HAL_Delay(1000);
+	HAL_UART_Transmit(&huart2, (uint8_t *)"AT+QSSLCFG=\"clientkey\",2,\"user_key.pem\"\r\n", strlen("AT+QSSLCFG=\"clientkey\",2,\"user_key.pem\"\r\n"), 1000);
+	HAL_Delay(1000);
+	HAL_UART_Transmit(&huart2, (uint8_t *)"AT+QSSLCFG=\"seclevel\",2,2\r\n", strlen("AT+QSSLCFG=\"seclevel\",2,2\r\n"), 1000);
+	HAL_Delay(1000);
+	HAL_UART_Transmit(&huart2, (uint8_t *)"AT+QSSLCFG=\"sslversion\",2,4\r\n", strlen("AT+QSSLCFG=\"sslversion\",2,4\r\n"), 1000);
+	HAL_Delay(1000);
+	HAL_UART_Transmit(&huart2, (uint8_t *)"AT+QSSLCFG=\"ciphersuite\",2,\"0xFFFF\"\r\n", strlen("AT+QSSLCFG=\"ciphersuite\",2,\"0xFFFF\"\r\n"), 1000);
+	HAL_Delay(1000);
+	HAL_UART_Transmit(&huart2, (uint8_t *)"AT+QSSLCFG=\"ignorertctime\",1\r\n", strlen("AT+QSSLCFG=\"ignorertctime\",1\r\n"), 1000);
+	HAL_Delay(1000);
+
+}
+
+const char* mqtt_broker = "a2lrvn2efyqxdn-ats.iot.us-east-1.amazonaws.com";
+const char* client_id = "M66";
+const char* topic = "$aws/things/M66/shadow";
+void AWS_MQTT(void){
+
+
+//	HAL_UART_Transmit(&huart2, (uint8_t *)"AT+QMTOPEN=0,\"a2lrvn2efyqxdn-ats.iot.us-east-1.amazonaws.com\",8883\r\n",74 , 1000);
+	char mqtt_open_command[128];
+	sprintf(mqtt_open_command, "AT+QMTOPEN=0,\"%s\",8883", mqtt_broker);
+	send_at_command(mqtt_open_command,"+QMTOPEN: 0,0");
+    while (check_at_command_response(LONG_DELAY) == AT_WAITING_RESPONSE);
+    if(at_state != AT_RESPONSE_RECEIVED)
+    {
+        return;
+    }
+	char mqtt_conn_command[128];
+	sprintf(mqtt_conn_command, "AT+QMTCONN=0,\"%s\"", client_id);
+	send_at_command(mqtt_conn_command, "+QMTCONN: 0,0,0");
+    while (check_at_command_response(DELAY) == AT_WAITING_RESPONSE);
+    if(at_state != AT_RESPONSE_RECEIVED)
+    {
+        return;
+    }
+
+    at_state = AT_IDLE;
+	char mqtt_sub_command[128];
+	sprintf(mqtt_sub_command, "AT+QMTSUB=0,1,\"%s\",1", topic);
+	send_at_command(mqtt_sub_command, "+QMTSUB: 0,1,0,1");
+    while (check_at_command_response(DELAY) == AT_WAITING_RESPONSE);
+    if(at_state != AT_RESPONSE_RECEIVED)
+    {
+        return;
+    }
+    current_mode = MODE_MQTT;
+}
+
+
+//AT+QMTOPEN=0,"a2lrvn2efyqxdn-ats.iot.us-east-1.amazonaws.com",8883
+
+uint32_t receive_data(uint8_t* buffer, uint32_t buffer_size) {
+    uint32_t bytes_read = 0;
+    uint32_t last_data_time = HAL_GetTick(); // Initialize with current tick
+
+//    DISABLE_UART_INTERRUPT();
+
+    while (bytes_read < buffer_size) {
+        if (uart_buffer.read_index != uart_buffer.write_index) {
+            buffer[bytes_read++] = uart_buffer.data[uart_buffer.read_index++];
+
+            // Update the last data time since new data is received
+            last_data_time = HAL_GetTick();
+
+            // Handle circular buffer wrapping
+            if (uart_buffer.read_index >= UART_BUFFER_SIZE) {
+                uart_buffer.read_index = 0;
+            }
+        } else if ((HAL_GetTick() - last_data_time) > UART_TIMEOUT) {
+            break;  // Timeout if no new data for a defined duration
+        }
+    }
+
+//    ENABLE_UART_INTERRUPT();
+
+    return bytes_read;
+}
+
+void handle_default_byte(uint8_t byte) {
+	receive_buffer[buffer_idx++] = byte;
+
+	    // Null-terminate the buffer for string functions
+	    if (buffer_idx < BUFFER_MAX_SIZE) {
+	        receive_buffer[buffer_idx] = '\0';
+	    }
+
+	    // Check for end of HTTP response or other markers
+	    if (strstr((char*)receive_buffer, "\r\nOK\r\n") != NULL) {
+	        firmware_download_complete = true;
+	    }
+
+	    // If the buffer is almost full or some other condition arises, you can process or reset
+	    if (buffer_idx >= BUFFER_MAX_SIZE - 1) {
+	        // TODO: Handle overflow or reset buffer_idx
+	        buffer_idx = 0; // Reset as an example
+	        memset(receive_buffer, 0, BUFFER_MAX_SIZE); // Clear buffer (if needed)
+	    }
+}
+
+void handle_mqtt_byte(uint8_t byte) {
+    // Append the received byte to the MQTT buffer
+    if (mqtt_buffer_idx < MQTT_BUFFER_SIZE - 1) {
+        mqtt_buffer[mqtt_buffer_idx++] = byte;
+        mqtt_buffer[mqtt_buffer_idx] = '\0'; // Null-terminate for string functions
+    } else {
+        // Buffer overflow; you can handle it as required, maybe reset the index
+        mqtt_buffer_idx = 0;
+        return;
+    }
+
+    // Check if we have a complete MQTT message, e.g., by looking for }
+    if (byte == '}') {
+        // Null-terminate the message for safety
+        mqtt_buffer[mqtt_buffer_idx] = '\0';
+
+        // Handle the complete MQTT message
+        handle_mqtt_message((const char*)mqtt_buffer);
+
+        // Reset the MQTT buffer for the next message
+        mqtt_buffer_idx = 0;
+    }
+}
+
+void handle_mqtt_message(const char* message) {
+    const char* json_start = strchr(message, '{'); // Find the first '{' character
+    cJSON* root = cJSON_Parse(json_start);
+
+    if (root != NULL) {
+        cJSON* messageTypeObj = cJSON_GetObjectItem(root, "message_type");
+        cJSON* firmwareUrlObj = cJSON_GetObjectItem(root, "firmware_url");
+
+        if (messageTypeObj != NULL && firmwareUrlObj != NULL) {
+            const char* message_type = messageTypeObj->valuestring;
+            if (strcmp(message_type, "update_available") == 0) {
+                // Copy firmware URL to global variable
+                strncpy(firmware_url, firmwareUrlObj->valuestring, MAX_URL_LENGTH - 1);
+                firmware_url[MAX_URL_LENGTH - 1] = '\0'; // Null-terminate to ensure it's a valid string
+
+                // Set the state to begin downloading
+                current_mode = MODE_DEFAULT;
+                fwUpdateState = DOWNLOAD_PENDING;
+            }
+        }
+        cJSON_Delete(root);
+    }
+}
+
+bool download_firmware(const char* firmware_url) {
+	bool result = false; // Default return value
+    switch (current_state) {
+        case INIT_HTTP:
+            send_at_command("AT+QSSLCFG=\"https\",1", "OK");
+            HAL_Delay(SHORT_DELAY);
+            if (check_at_command_response(DELAY) == AT_RESPONSE_RECEIVED) {
+            	send_at_command("AT+QSSLCFG=\"httpsctxi\",1", "OK");
+//            	if (check_at_command_response(DELAY) == AT_RESPONSE_RECEIVED) {
+            		HAL_Delay(SHORT_DELAY);
+            		current_state = SET_HTTP_URL;
+            		firmware_download_busy = false;
+//            	}
+            } else if (check_at_command_response(LONG_DELAY) == AT_RESPONSE_TIMEOUT) {
+                current_state = DOWNLOAD_ERROR;
+//                firmware_download_busy = false;
+            }
+            break;
+
+        case SET_HTTP_URL:
+            char http_get_command[128];
+            sprintf(http_get_command, "AT+QHTTPURL=%d,60", strlen(firmware_url));
+            send_at_command(http_get_command, "CONNECT");
+            while (check_at_command_response(SHORT_DELAY) == AT_WAITING_RESPONSE);
+            if(at_state != AT_RESPONSE_RECEIVED)
+            {
+            	current_state = DOWNLOAD_ERROR;
+            	firmware_download_busy = false;
+            }
+//            send_at_command(firmware_url, "OK");
+            UART_Send(firmware_url);
+            HAL_Delay(DELAY);
+            firmware_download_busy = false;
+            current_state = INITIATE_HTTP_GET;
+            break;
+
+        case INITIATE_HTTP_GET:
+//        	Delay(1000);
+//            send_at_command(firmware_url, "OK");
+//        	UART_Send("AT+QHTTPGET=60");
+//        	Delay(1000);
+//        	current_state = RECEIVE_HTTP_RESPONSE;
+
+            send_at_command("AT+QHTTPGET=60", "OK");
+            while (check_at_command_response(LONG_DELAY) == AT_WAITING_RESPONSE);
+            if(at_state != AT_RESPONSE_RECEIVED)
+            {
+            	current_state = DOWNLOAD_ERROR;
+            	firmware_download_busy = false;
+            }else{
+            	HAL_Delay(LONG_DELAY);
+            	current_state = RECEIVE_HTTP_RESPONSE;
+            	firmware_download_busy = false;
+            }
+            break;
+
+
+        case RECEIVE_HTTP_RESPONSE:
+        	if (firmware_update_process()){
+               	firmware_download_busy = false;
+                current_state = DOWNLOAD_COMPLETE;
+        	}
+            break;
+
+
+        case DOWNLOAD_COMPLETE:
+            current_state = INIT_HTTP;  // Reset state for next time
+            firmware_download_busy = false;
+            result = true;
+            break;
+
+        case DOWNLOAD_ERROR:
+//            current_state = INIT_HTTP;  // Reset for next time
+//            read_request = false;
+//            firmware_download_busy = false;
+            break;
+
+        default:
+            break;
+    }
+    return result;
+}
+
+bool verify_firmware_update() {
+    // Calculate the starting address of the firmware in flash
+    uint8_t* firmware_data = (uint8_t*) START_FLASH_ADDRESS;
+
+    // Calculate the length of the firmware data including the appended CRC
+    firmware_length_with_crc = current_flash_address - START_FLASH_ADDRESS;
+
+    // Ensure that the firmware length is valid (this should also account for the CRC32 size)
+    if (!is_firmware_size_valid(firmware_length_with_crc)) {
+        return false;  // Firmware data length is invalid
+    }
+
+    // Calculate CRC for the stored firmware data (including the appended CRC)
+    uint32_t calculated_crc = calculate_crc32(firmware_data, firmware_length_with_crc);
+
+    // If the calculation is correct, the CRC result should be 0
+    return (calculated_crc == 0x0);
+}
+
+
+bool is_firmware_size_valid(uint32_t firmware_length) {
+    return firmware_length > sizeof(uint32_t);  // Ensure firmware_length is more than just the CRC size.
+}
+
+uint32_t extract_received_crc(uint8_t* firmware_data, uint32_t firmware_length) {
+    uint32_t* crc_ptr = (uint32_t*)(firmware_data + firmware_length - sizeof(uint32_t));
+    return *crc_ptr;
+}
+
+
+// Function to calculate CRC32 for a buffer
+uint32_t calculate_crc32(uint8_t *data, uint32_t size) {
+    uint32_t crc = 0xFFFFFFFF;
+
+    for (uint32_t i = 0; i < size; i++) {
+        crc ^= ((uint32_t)data[i]) << 24;
+
+        for (uint32_t j = 0; j < 8; j++) {
+            if (crc & 0x80000000) {
+                crc = (crc << 1) ^ CRC_POLYNOMIAL;
+            } else {
+                crc = crc << 1;
+            }
+        }
+    }
+
+    return crc;
+}
+
+bool set_update_flag(void) {
+
+    // Assuming you have a function to erase the necessary flash sector.
+    // You should implement this if you don't have it.
+    if (HAL_OK != erase_flash(CONFIG_START_ADDR, CONFIG_END_ADDR)) {
+        // Handle error: Erasing flash failed
+
+    }
+    uint32_t updateFlag = UPDATE_FLAG_VALUE;
+    uint32_t firmwareSize = firmware_length_with_crc;
+
+    if (HAL_OK != write_to_flash(CONFIG_START_ADDR, (uint8_t *)&updateFlag, 4)) {
+        return false;
+    }
+
+    if (HAL_OK != write_to_flash(FIRMWARE_SIZE_ADDR, (uint8_t *)&firmwareSize, 4)) {
+        return false;
+    }
+
+
+    return true;
+}
+
+
+
+void firmware_update_handler(void)
+{
+    switch (fwUpdateState)
+    {
+        case DOWNLOAD_PENDING:
+            if (!firmware_download_busy) {
+                firmware_download_busy = true; // Set the flag as we're initiating the download
+                if (download_firmware(firmware_url)) {
+                    fwUpdateState = VERIFY_PENDING;
+                    resetAction();
+                } else {
+//                    firmware_download_busy = false; // Reset the flag if download fails
+
+                }
+            }
+            break;
+
+        case VERIFY_PENDING:
+            if (!firmware_verify_busy) {
+                firmware_verify_busy = true;
+                if (verify_firmware_update()) {
+                    fwUpdateState = WRITE_PENDING;
+                    resetAction();
+                } else {
+//                    firmware_verify_busy = false; // Reset the flag if verification fails
+                }
+            }
+            break;
+
+        case WRITE_PENDING:
+            if (!firmware_write_busy) {
+                firmware_write_busy = true;
+                if (set_update_flag()) {
+                	HAL_FLASH_Lock();
+                    fwUpdateState = RESET_PENDING;
+                    firmware_write_busy = false;
+                    resetAction();
+                } else {
+//                    firmware_write_busy = false; // Reset the flag if writing fails
+                }
+            }
+            break;
+
+        case RESET_PENDING:
+            send_at_command("AT+QMTDISC=0", "+QMTDISC: 0,0");
+            NVIC_SystemReset();
+            break;
+
+        case ERROR_STATE:
+            // Handle error, etc.
+            // Reset all flags as we're in an error state
+            firmware_download_busy = false;
+            firmware_verify_busy = false;
+            firmware_write_busy = false;
+            break;
+
+        default:
+            /* IDLE, ACTION_IN_PROGRESS, or other states. No operation. */
+            break;
+    }
+}
+
+void resetAction() {
+    retry_count = 0;
+}
+
+bool firmware_update_process() {
+    bool success = false;
+    const uint8_t max_retries = 3; // Define max retries as per your requirements
+    uint8_t retry_count = 0;
+    while (!success && retry_count < max_retries) {
+    // Attempt to erase flash
+    if (HAL_OK != erase_flash(START_FLASH_ADDRESS, END_FLASH_ADDRESS)) {
+        // Handle error: Erasing flash failed
+        retry_count++;
+        continue; // Go to next iteration to retry
+    }
+
+    bool end_marker_found = false;
+    bool first_marker_skipped = false;
+    do {
+        if (!read_request) {
+            send_at_command("AT+QHTTPREAD=30\r\n", "CONNECT\r\n");
+            while (check_at_command_response(LONG_DELAY) == AT_WAITING_RESPONSE);
+
+            if (at_state != AT_RESPONSE_RECEIVED) {
+                current_state = DOWNLOAD_ERROR;
+                return false;
+            }
+            clear_uart_buffer();
+            read_request = true;
+        }
+
+        // Read data until active buffer is full or END_MARKER is detected
+        while (buffer_index < BUFFER_SIZE) {
+            uint32_t bytes_received = receive_data(&active_buffer[buffer_index], BUFFER_SIZE - buffer_index);
+
+            if (bytes_received == 0) {
+                break;
+            }
+
+            buffer_index += bytes_received;
+            if (check_for_uart_error()) {
+            	break; // If an error is detected, break out of the loop to restart the process
+            }
+
+            if (find_end_marker(active_buffer, buffer_index)) {
+                if (first_marker_skipped){
+                	end_marker_found = true;
+                	buffer_index = (uint32_t)(find_end_marker_position(active_buffer, buffer_index) - active_buffer);
+                	// Subtract the length of the END_MARKER to exclude it from the write.
+//                	buffer_index -= strlen(END_MARKER);
+
+                	// Switch buffers immediately
+                	uint8_t *temp = active_buffer;
+                	active_buffer = write_buffer;
+                	write_buffer = temp;
+
+                	// Write data to flash
+                	uint32_t residue = buffer_index % 4;
+                	uint32_t write_size = buffer_index - residue;
+                	if (HAL_OK != write_to_flash(current_flash_address, write_buffer, write_size)) {
+                	    return false;
+                	}
+                	current_flash_address += write_size;
+                	buffer_index = residue;
+
+                }else{
+                	first_marker_skipped = true;
+                }
+
+
+                break;
+
+            }
+
+        }
+
+        // Switch buffers
+        uint8_t *temp = active_buffer;
+        active_buffer = write_buffer;
+        write_buffer = temp;
+
+        // At this point, the write_buffer is full (or has END_MARKER), so write it to flash
+        uint32_t residue = buffer_index % 4;
+        uint32_t write_size = buffer_index - residue;
+        if (HAL_OK != write_to_flash(current_flash_address, write_buffer, write_size)) {
+            return false;
+        }
+        current_flash_address += write_size;
+
+        if (residue) {
+            memmove(write_buffer, &write_buffer[write_size], residue);
+        }
+
+        buffer_index = residue;
+
+    } while (!end_marker_found);
+    if (end_marker_found && !check_for_uart_error()) {
+        success = true; // If the end marker was found and no error occurred, the process was successful
+    } else {
+    	read_request = false;
+        retry_count++;
+    }
+}
+    if (success) {
+        current_state = DOWNLOAD_COMPLETE;
+        return true;
+    } else {
+        current_state = DOWNLOAD_ERROR;
+        return false; // Firmware update was unsuccessful after max retries
+    }
+//    current_state = DOWNLOAD_COMPLETE;
+//    return true; // Firmware update was successful
+}
+	bool find_end_marker(uint8_t *buffer, uint32_t size) {
+		for (uint32_t i = 0; i < size + 1; i++) {
+			if (memcmp(&buffer[i], END_MARKER, strlen(END_MARKER)) == 0) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+HAL_StatusTypeDef erase_flash(uint32_t start_address, uint32_t end_address) {
+    HAL_StatusTypeDef status;
+    FLASH_EraseInitTypeDef erase;
+    uint32_t error;
+
+    // Unlock the flash
+   status = HAL_FLASH_Unlock();
+   if (status != HAL_OK) {
+       // Handle flash unlock error
+   	firmware_write_busy = false;
+       return status;
+   }
+
+    // Define the erase parameters
+    erase.TypeErase = FLASH_TYPEERASE_SECTORS;
+    erase.VoltageRange = FLASH_VOLTAGE_RANGE_3; // Adjust according to your needs
+    erase.Sector = get_flash_sector(start_address); // You need to implement the get_flash_sector function
+    erase.NbSectors = get_flash_sector(end_address) - erase.Sector + 1;
+
+    status = HAL_FLASHEx_Erase(&erase, &error);
+    if (status != HAL_OK) {
+        // Handle flash unlock error
+    	firmware_write_busy = false;
+        return status;
+    }
+
+    // Lock the flash
+    HAL_FLASH_Lock();
+    if (status != HAL_OK) {
+        // Handle flash unlock error
+    	firmware_write_busy = false;
+        return status;
+    }
+
+    return status;
+}
+
+HAL_StatusTypeDef write_to_flash(uint32_t address, uint8_t *data, uint32_t length) {
+    HAL_StatusTypeDef status;
+
+    // Unlock the flash
+    status = HAL_FLASH_Unlock();
+    if (status != HAL_OK) {
+        // Handle flash unlock error
+    	firmware_write_busy = false;
+        return status;
+    }
+
+    for (uint32_t i = 0; i < length; i += 4) {
+        status = HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, address + i, *(uint32_t*)(data + i));
+        if(*(uint32_t*)(address + i) != *(uint32_t*)(data + i)) {
+            // Handle data mismatch error
+            firmware_write_busy = false;
+            HAL_FLASH_Lock();
+            status = HAL_ERROR;
+        }
+        if (status != HAL_OK) {
+        	firmware_write_busy = false;
+            return status;
+        }
+    }
+
+    // Lock the flash
+    status = HAL_FLASH_Lock();
+    if (status != HAL_OK) {
+    	firmware_write_busy = false;
+    	return status;
+    }
+
+    return status;
+}
+
+uint32_t get_flash_sector(uint32_t address) {
+    uint32_t sector;
+
+    // STM32F407VG flash sectors
+    if (address < 0x08004000) sector = FLASH_SECTOR_0;
+    else if (address < 0x08008000) sector = FLASH_SECTOR_1;
+    else if (address < 0x0800C000) sector = FLASH_SECTOR_2;
+    else if (address < 0x08010000) sector = FLASH_SECTOR_3;
+    else if (address < 0x08020000) sector = FLASH_SECTOR_4;
+    else if (address < 0x08040000) sector = FLASH_SECTOR_5;
+    else if (address < 0x08060000) sector = FLASH_SECTOR_6;
+    else if (address < 0x08080000) sector = FLASH_SECTOR_7;
+    else if (address < 0x080A0000) sector = FLASH_SECTOR_8;
+    else if (address < 0x080C0000) sector = FLASH_SECTOR_9;
+    else if (address < 0x080E0000) sector = FLASH_SECTOR_10;
+    else sector = FLASH_SECTOR_11;  // covers up to 0x08100000
+
+    return sector;
+}
+
+void clear_uart_buffer() {
+    uart_buffer.write_index = 0;
+    uart_buffer.read_index = 0;
+}
+
+uint8_t* find_end_marker_position(uint8_t *buffer, uint32_t size) {
+    for (uint32_t i = 0; i < size - strlen(END_MARKER) + 1; i++) {
+        if (memcmp(&buffer[i], END_MARKER, strlen(END_MARKER)) == 0) {
+            return &buffer[i]; // Return pointer to the starting position of END_MARKER
+        }
+    }
+    return NULL; // END_MARKER not found in the buffer
+}
+
+bool check_for_uart_error() {
+    // Check if the UART buffer contains the error message
+    // Return true if found, otherwise return false
+    // ... (this depends on how you handle your UART data)
+    if (strstr((char *)uart_buffer.data, "\r\n+CME ERROR: http socket read error\r\n") != NULL){
+    	return true;
+    }
+    else {
+    	return false;
+    }
+}
+
+

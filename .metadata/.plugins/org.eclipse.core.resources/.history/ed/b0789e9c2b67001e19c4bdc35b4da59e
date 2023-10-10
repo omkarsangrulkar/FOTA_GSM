@@ -1,0 +1,17 @@
+/*
+ * bootloader.h
+ *
+ *  Created on: Oct 10, 2023
+ *      Author: sghute
+ */
+
+#ifndef INC_BOOTLOADER_H_
+#define INC_BOOTLOADER_H_
+
+#include "main.h"
+#include <stdint.h>
+#include <string.h>
+#include "stdbool.h"
+
+
+#endif /* INC_BOOTLOADER_H_ */

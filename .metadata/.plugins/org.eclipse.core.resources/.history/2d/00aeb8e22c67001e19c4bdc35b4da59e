@@ -1,0 +1,262 @@
+/*
+ * bootloader.c
+ *
+ *  Created on: Oct 10, 2023
+ *      Author: sghute
+ */
+
+#include "bootloader.h"
+#include "main.h"
+#include <stdint.h>
+#include <string.h>
+#include "stdbool.h"
+
+//void bootloader_function(void){
+//    uint32_t *config_flag = (uint32_t *)CONFIG_START_ADDR;
+//    uint32_t *firmware_size = (uint32_t *)FIRMWARE_SIZE_ADDR;
+//    if (*config_flag == UPDATE_FLAG_VALUE) {
+//        // Calculate CRC32 of the new firmware in the TEMP section
+////        uint32_t calculated_crc = calculate_crc32((uint8_t *)TEMP_START_ADDR, TEMP_SECTION_SIZE);
+//        uint32_t *end_marker = (uint32_t *)(TEMP_START_ADDR + TEMP_SECTION_SIZE);
+//
+////        if (calculated_crc == 0x0) {
+//            uint32_t new_firmware_size = (uint32_t)(end_marker - (uint32_t *)TEMP_START_ADDR);
+//
+//            if (!update_application(new_firmware_size)) {
+//                // Handle firmware update error, maybe flash a specific LED
+//            }
+////        } else {
+////            // Handle CRC mismatch error, maybe flash a specific LED
+////        }
+//    }
+//	   // Handle timeout (if needed)
+//	   uint32_t start_time = HAL_GetTick();
+//	   while (!is_timeout_expired(start_time, BOOTLOADER_TIMEOUT_MS)) {
+//	       // Your bootloader code can have additional functionality here
+//	   }
+//
+//	   // Jump to the application
+//	   jump_to_application(APP_START_ADDR);
+//
+//}
+
+void bootloader_function(void){
+    uint32_t *config_flag = (uint32_t *)CONFIG_START_ADDR;
+    uint32_t *firmware_size = (uint32_t *)FIRMWARE_SIZE_ADDR;
+
+    if (*config_flag == UPDATE_FLAG_VALUE) {
+        // Step 1: Verify firmware before writing
+        if (is_firmware_valid(TEMP_START_ADDR, *firmware_size)) {
+            // Indicate that the update process has started
+            *config_flag = UPDATE_START_FLAG_VALUE;
+
+            // Step 2: Start updating application with the firmware
+            if (update_application(*firmware_size)) {
+
+                // Step 3: Verify the firmware after writing
+                if (is_firmware_valid(APP_START_ADDR, *firmware_size)) {
+                    // Indicate that the update process is completed successfully
+                    *config_flag = UPDATE_COMPLETE_FLAG_VALUE;
+                } else {
+                    // Handle verification failure after firmware write
+                    error_handler(); // This function needs to be defined to handle this specific case.
+                }
+
+            } else {
+                // Handle firmware update error
+                error_handler(); // This function will manage errors such as flashing a specific LED or logging.
+            }
+        } else {
+            // Handle CRC mismatch error
+            error_handler(); // Handle the error if the firmware's CRC doesn't match.
+        }
+    }
+
+    // Handle timeout (if needed)
+    uint32_t start_time = HAL_GetTick();
+    while (!is_timeout_expired(start_time, BOOTLOADER_TIMEOUT_MS)) {
+        // Your bootloader code can have additional functionality here
+    }
+
+    // Step 4: If everything is fine, jump to the application
+    jump_to_application(APP_START_ADDR);
+}
+// Function to update the application with error handling
+bool update_application(uint32_t app_size) {
+//    uint32_t *temp_src = (uint32_t *)TEMP_START_ADDR;
+//    uint32_t *app_dest = (uint32_t *)APP_START_ADDR;
+
+
+    if (HAL_OK != erase_flash(APP_START_ADDR, APP_END_ADDR)) {
+        // Handle error: Erasing flash failed
+        return false;     // Return an error
+    }
+
+    // Check if the new binary size is valid
+    if (HAL_OK != transfer_flash_data(TEMP_START_ADDR, APP_START_ADDR, TEMP_SECTION_SIZE)) {
+        return false;
+    }
+
+    // Reset the flag in the config section
+    if (HAL_OK != erase_flash(CONFIG_START_ADDR, CONFIG_END_ADDR)) {
+        // Handle error: Erasing flash failed
+        return false;     // Return an error
+    }
+    return true; // Indicate successful update
+}
+
+
+// Function pointer to the application
+typedef void (*pFunction)(void);
+
+//void bootloader_function(void) __attribute__((section(".bootloader")));
+
+void jump_to_application(uint32_t app_address) {
+    // 1. Define application entry and stack pointer
+    uint32_t app_stack_pointer = *(volatile uint32_t*)app_address;
+    pFunction app_entry = (pFunction)(*(volatile uint32_t*)(app_address + 4));
+
+    // 2. Disable all interrupts
+//    __disable_irq();
+
+    // 3. Reset all peripherals (optional but recommended)
+    HAL_DeInit();
+
+    // 4. Clear any pending system interrupts. Especially if a SysTick is running, it should be stopped.
+    SysTick->CTRL = 0;
+    SysTick->LOAD = 0;
+    SysTick->VAL = 0;
+
+    // 5. Reset the RCC clock configuration to the default reset state
+    // -- Reset the RCC clock configuration to the default reset state
+    // -- Disable all peripherals clock
+    // -- Update the SystemCoreClock variable
+    HAL_RCC_DeInit();
+
+    // 6. Set the vector table base address
+//    SCB->VTOR = app_address;
+
+    // 7. Initialize master stack pointer with application stack pointer
+    __set_MSP(app_stack_pointer);
+
+    // 8. Jump to the application
+    app_entry();
+}
+
+// Function to calculate a simple checksum
+// Manual CRC32 calculation
+uint32_t calculate_crc32(uint8_t *data, uint32_t size) {
+    uint32_t crc = 0xFFFFFFFF;
+
+    for (uint32_t i = 0; i < size; i++) {
+        crc ^= ((uint32_t)data[i]) << 24;
+
+        for (uint32_t j = 0; j < 8; j++) {
+            if (crc & 0x80000000) {
+                crc = (crc << 1) ^ CRC_POLYNOMIAL;
+            } else {
+                crc = crc << 1;
+            }
+        }
+    }
+
+    return crc;
+}
+
+uint32_t get_flash_sector(uint32_t address) {
+    uint32_t sector;
+
+    // STM32F407VG flash sectors
+    if (address < 0x08004000) sector = FLASH_SECTOR_0;
+    else if (address < 0x08008000) sector = FLASH_SECTOR_1;
+    else if (address < 0x0800C000) sector = FLASH_SECTOR_2;
+    else if (address < 0x08010000) sector = FLASH_SECTOR_3;
+    else if (address < 0x08020000) sector = FLASH_SECTOR_4;
+    else if (address < 0x08040000) sector = FLASH_SECTOR_5;
+    else if (address < 0x08060000) sector = FLASH_SECTOR_6;
+    else if (address < 0x08080000) sector = FLASH_SECTOR_7;
+    else if (address < 0x080A0000) sector = FLASH_SECTOR_8;
+    else if (address < 0x080C0000) sector = FLASH_SECTOR_9;
+    else if (address < 0x080E0000) sector = FLASH_SECTOR_10;
+    else sector = FLASH_SECTOR_11;  // covers up to 0x08100000
+
+    return sector;
+}
+
+HAL_StatusTypeDef erase_flash(uint32_t start_address, uint32_t end_address) {
+    HAL_StatusTypeDef status;
+    FLASH_EraseInitTypeDef erase;
+    uint32_t error;
+
+    // Unlock the flash
+   status = HAL_FLASH_Unlock();
+   if (status != HAL_OK) {
+       // Handle flash unlock error
+       return status;
+   }
+
+    // Define the erase parameters
+    erase.TypeErase = FLASH_TYPEERASE_SECTORS;
+    erase.VoltageRange = FLASH_VOLTAGE_RANGE_3; // Adjust according to your needs
+    erase.Sector = get_flash_sector(start_address); // You need to implement the get_flash_sector function
+    erase.NbSectors = get_flash_sector(end_address) - erase.Sector + 1;
+
+    status = HAL_FLASHEx_Erase(&erase, &error);
+    if (status != HAL_OK) {
+        // Handle flash unlock error
+        return status;
+    }
+
+    // Lock the flash
+    HAL_FLASH_Lock();
+    if (status != HAL_OK) {
+        // Handle flash unlock error
+        return status;
+    }
+
+    return status;
+}
+
+HAL_StatusTypeDef transfer_flash_data(uint32_t src_address, uint32_t dest_address, uint32_t length) {
+    HAL_StatusTypeDef status;
+
+    // Unlock the flash
+    status = HAL_FLASH_Unlock();
+    if (status != HAL_OK) {
+        // Handle flash unlock error
+        return status;
+    }
+
+    for (uint32_t i = 0; i < length; i += 4) {
+        // Read data from the source address
+        uint32_t data_word = *(uint32_t*)(src_address + i);
+
+        // Write data to the destination address
+        status = HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, dest_address + i, data_word);
+        if (status != HAL_OK) {
+            // Lock the flash before returning in case of an error
+            HAL_FLASH_Lock();
+            return status;
+        }
+
+        // Verify data has been written correctly
+        if(*(uint32_t*)(dest_address + i) != data_word) {
+            // Handle data mismatch error
+            HAL_FLASH_Lock();
+            return HAL_ERROR;
+        }
+    }
+
+    // Lock the flash
+    status = HAL_FLASH_Lock();
+    return status;
+}
+
+
+
+bool is_timeout_expired(uint32_t start_time, uint32_t timeout_ms) {
+    uint32_t current_time = HAL_GetTick(); // Use the HAL function for time
+    return (current_time - start_time) > timeout_ms;
+}
+
+
