@@ -33,11 +33,11 @@
 #define UPDATE_COMPLETE_FLAG_VALUE 			0x87654321
 
 #define ERROR_LED_PIN       GPIO_PIN_13    // Assuming you're using the on-board LED on a STM32F4 Discovery board
-#define ERROR_LED_PORT      GPIOB
+#define ERROR_LED_PORT      GPIOD
 
 #define ERROR_BLINK_INTERVAL 500  // Blinking interval in milliseconds
-
-
+#define SECTOR_SIZE 0x2000  // For example, 16KB. Adjust based on the specific sector size
+extern uint32_t backup_buffer[];
 
 void bootloader_function(void);
 bool update_application(uint32_t app_size);
@@ -46,6 +46,7 @@ uint32_t calculate_crc32(uint8_t *data, uint32_t size);
 uint32_t get_flash_sector(uint32_t address);
 HAL_StatusTypeDef erase_flash(uint32_t start_address, uint32_t end_address);
 HAL_StatusTypeDef transfer_flash_data(uint32_t src_address, uint32_t dest_address, uint32_t length);
+HAL_StatusTypeDef update_config_flag(uint32_t new_value);
 bool is_timeout_expired(uint32_t start_time, uint32_t timeout_ms);
 void error_handler(void);
 bool is_firmware_valid(uint32_t addr, uint32_t size);

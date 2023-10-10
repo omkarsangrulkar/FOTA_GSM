@@ -11,6 +11,9 @@
 #include <string.h>
 #include "stdbool.h"
 
+uint32_t *config_flag = (uint32_t *)CONFIG_START_ADDR;
+uint32_t *firmware_size = (uint32_t *)FIRMWARE_SIZE_ADDR;
+
 //void bootloader_function(void){
 //    uint32_t *config_flag = (uint32_t *)CONFIG_START_ADDR;
 //    uint32_t *firmware_size = (uint32_t *)FIRMWARE_SIZE_ADDR;
@@ -39,7 +42,7 @@
 //	   jump_to_application(APP_START_ADDR);
 //
 //}
-
+uint32_t backup_buffer[SECTOR_SIZE / sizeof(uint32_t)];
 void error_handler(void) {
     // Initialize LED GPIO as an output pin
     __HAL_RCC_GPIOB_CLK_ENABLE();
@@ -62,14 +65,13 @@ void error_handler(void) {
 }
 
 void bootloader_function(void){
-    uint32_t *config_flag = (uint32_t *)CONFIG_START_ADDR;
-    uint32_t *firmware_size = (uint32_t *)FIRMWARE_SIZE_ADDR;
 
     if (*config_flag == UPDATE_FLAG_VALUE) {
         // Step 1: Verify firmware before writing
         if (is_firmware_valid(TEMP_START_ADDR, *firmware_size)) {
             // Indicate that the update process has started
-            *config_flag = UPDATE_START_FLAG_VALUE;
+//            *config_flag = UPDATE_START_FLAG_VALUE;
+        	update_config_flag(UPDATE_START_FLAG_VALUE);
 
             // Step 2: Start updating application with the firmware
             if (update_application(*firmware_size)) {
@@ -77,7 +79,8 @@ void bootloader_function(void){
                 // Step 3: Verify the firmware after writing
                 if (is_firmware_valid(APP_START_ADDR, *firmware_size)) {
                     // Indicate that the update process is completed successfully
-                    *config_flag = UPDATE_COMPLETE_FLAG_VALUE;
+//                    *config_flag = UPDATE_COMPLETE_FLAG_VALUE;
+                	update_config_flag(UPDATE_COMPLETE_FLAG_VALUE);
                 } else {
                     // Handle verification failure after firmware write
                     error_handler(); // This function needs to be defined to handle this specific case.
@@ -100,7 +103,15 @@ void bootloader_function(void){
     }
 
     // Step 4: If everything is fine, jump to the application
-    jump_to_application(APP_START_ADDR);
+    if (*config_flag == UPDATE_COMPLETE_FLAG_VALUE){
+    	if (is_firmware_valid(APP_START_ADDR, *firmware_size)){
+    		jump_to_application(APP_START_ADDR);
+    	}else{
+    		error_handler();
+    	}
+    }else{
+    	jump_to_application(APP_START_ADDR);
+    }
 }
 // Function to update the application with error handling
 bool update_application(uint32_t app_size) {
@@ -114,7 +125,7 @@ bool update_application(uint32_t app_size) {
     }
 
     // Check if the new binary size is valid
-    if (HAL_OK != transfer_flash_data(TEMP_START_ADDR, APP_START_ADDR, TEMP_SECTION_SIZE)) {
+    if (HAL_OK != transfer_flash_data(TEMP_START_ADDR, APP_START_ADDR, app_size)) {
         return false;
     }
 
@@ -283,6 +294,45 @@ HAL_StatusTypeDef transfer_flash_data(uint32_t src_address, uint32_t dest_addres
     // Lock the flash
     status = HAL_FLASH_Lock();
     return status;
+}
+
+
+HAL_StatusTypeDef update_config_flag(uint32_t new_value) {
+    HAL_StatusTypeDef status;
+    uint32_t i;
+
+    // 1. Backup the sector content
+    uint32_t* flash_ptr = (uint32_t*)CONFIG_START_ADDR;
+    for(i = 0; i < SECTOR_SIZE / sizeof(uint32_t); i++) {
+        backup_buffer[i] = *flash_ptr++;
+    }
+
+    // 2. Modify data in the buffer
+    uint32_t offset = (uint32_t)(config_flag) - CONFIG_START_ADDR;
+    backup_buffer[offset / sizeof(uint32_t)] = new_value;
+
+    // 3. Erase the sector
+    status = erase_flash(CONFIG_START_ADDR, CONFIG_END_ADDR);
+    if (status != HAL_OK) {
+        return status;
+    }
+
+    // 4. Write back the modified buffer
+    status = HAL_FLASH_Unlock();
+    if (status != HAL_OK) {
+        return status;
+    }
+
+    for (i = 0; i < SECTOR_SIZE / sizeof(uint32_t); i++) {
+        status = HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, CONFIG_START_ADDR + i * sizeof(uint32_t), backup_buffer[i]);
+        if (status != HAL_OK) {
+            HAL_FLASH_Lock();
+            return status;
+        }
+    }
+
+    HAL_FLASH_Lock();
+    return HAL_OK;
 }
 
 
